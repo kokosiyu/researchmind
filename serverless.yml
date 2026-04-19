@@ -1,0 +1,12 @@
+# 腾讯云 Serverless 配置
+app: researchmind-app
+component: website
+name: researchmind-website
+inputs:
+  src:
+    src: ./dist
+    exclude:
+      - .env
+  region: ap-guangzhou
+  bucketName: researchmind-website
+  protocol: https
