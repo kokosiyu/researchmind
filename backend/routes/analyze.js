@@ -12,17 +12,29 @@ const router = express.Router();
 const uploadsDir = path.join(process.cwd(), 'uploads');
 fs.mkdirSync(uploadsDir, { recursive: true });
 
+function fixFileName(name) {
+  if (!name) return name;
+  try {
+    const decoded = Buffer.from(name, 'latin1').toString('utf8');
+    if (/[\u4e00-\u9fa5]/.test(decoded)) return decoded;
+  } catch {}
+  try {
+    const decoded = Buffer.from(name, 'binary').toString('utf8');
+    if (/[\u4e00-\u9fa5]/.test(decoded)) return decoded;
+  } catch {}
+  return name;
+}
+
 // 配置 multer：50MB 限制
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadsDir);
   },
   filename: function (req, file, cb) {
+    file.originalname = fixFileName(file.originalname);
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    // 提取文件扩展名
     let ext = path.extname(file.originalname).toLowerCase();
     if (!ext) {
-      // 根据 mimetype 推断扩展名
       const mimeToExt = {
         'application/msword': '.doc',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
@@ -60,12 +72,27 @@ function handleUpload(req, res, next) {
         });
       }
     }
+    if (req.file) {
+      req.file.originalname = fixFileName(req.file.originalname);
+    }
     next();
   });
 }
 
-// 分析论文
+function cleanupFile(filePath) {
+  if (!filePath) return;
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch (err) {
+    console.warn('清理临时文件失败:', filePath, err.message);
+  }
+}
+
 router.post('/paper', handleUpload, async (req, res) => {
+  const filePath = req.file?.path;
+
   try {
     if (!req.file) {
       return res.status(400).json({ message: '请上传论文文件' });
@@ -73,8 +100,7 @@ router.post('/paper', handleUpload, async (req, res) => {
 
     console.log('开始处理文件:', req.file.originalname);
 
-    // 调用文本提取工具
-    const extractionResult = await extractTextFromFile(req.file.path, req.file.originalname);
+    const extractionResult = await extractTextFromFile(filePath, req.file.originalname);
     if (!extractionResult.success) {
       return res.status(400).json({
         message: extractionResult.message || '文档解析失败'
@@ -91,28 +117,22 @@ router.post('/paper', handleUpload, async (req, res) => {
 
     console.log('文档提取完成，文本长度:', text.length);
 
-    // 调用 AI 分析
-    console.log('调用DeepSeek API...');
+    console.log('调用AI分析...');
     const analysisResult = await aiService.summarizePaper(text, req.file.originalname);
     console.log('AI 分析完成');
 
-    // 准备内容预览（限制长度以避免响应过大）
-    let contentPreview;
-    if (text.length <= 300) {
-      contentPreview = text;
-    } else {
-      contentPreview = text.substring(0, 300) + '...';
-    }
+    const maxContentLength = 50000;
+    const storedContent = text.length <= maxContentLength ? text : text.substring(0, maxContentLength);
 
     const result = {
       title: analysisResult.title || req.file.originalname.replace(/\.[^/.]+$/, ''),
       authors: analysisResult.authors || '研究团队',
       abstract: analysisResult.abstract || analysisResult.summary || '文档摘要',
-      journal: analysisResult.journal || '自动分析期刊',
+      journal: analysisResult.journal || '',
       year: analysisResult.year || new Date().getFullYear(),
-      doi: analysisResult.doi || `10.1234/auto.${Date.now()}`,
+      doi: analysisResult.doi || '',
       keywords: Array.isArray(analysisResult.keywords) ? analysisResult.keywords : [],
-      content: contentPreview,
+      content: storedContent,
       summary: analysisResult.summary || analysisResult.abstract || '文档总结',
       fileName: req.file.originalname,
       filePath: req.file.filename,
@@ -125,6 +145,8 @@ router.post('/paper', handleUpload, async (req, res) => {
     res.status(500).json({
       message: `服务器错误: ${err.message}`
     });
+  } finally {
+    cleanupFile(filePath);
   }
 });
 

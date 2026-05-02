@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
+import { AlertTriangle } from 'lucide-react';
 
 const Profile: React.FC = () => {
   const { user, token, isAuthenticated, updateUser, deleteUser, logout } = useAppStore();
@@ -9,6 +10,7 @@ const Profile: React.FC = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false);
   const navigate = useNavigate();
 
   if (!isAuthenticated) {
@@ -33,10 +35,6 @@ const Profile: React.FC = () => {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('确定要删除您的账户吗？此操作不可恢复！')) {
-      return;
-    }
-
     setError('');
     setLoading(true);
 
@@ -47,6 +45,7 @@ const Profile: React.FC = () => {
       setError(err.response?.data?.message || '删除失败');
     } finally {
       setLoading(false);
+      setConfirmDeleteAccount(false);
     }
   };
 
@@ -117,13 +116,37 @@ const Profile: React.FC = () => {
 
           <div className="mt-8 pt-8 border-t border-gray-200">
             <h3 className="text-lg font-semibold text-red-600 mb-4">危险操作</h3>
-            <button
-              onClick={handleDelete}
-              disabled={loading}
-              className="w-full px-4 py-2 border border-red-300 text-sm font-medium rounded-lg text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-            >
-              删除账户
-            </button>
+            {!confirmDeleteAccount ? (
+              <button
+                onClick={() => setConfirmDeleteAccount(true)}
+                disabled={loading}
+                className="w-full px-4 py-2 border border-red-300 text-sm font-medium rounded-lg text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+              >
+                删除账户
+              </button>
+            ) : (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                  <span className="text-sm text-red-700 font-medium">确定要删除您的账户吗？此操作不可恢复！</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleDelete}
+                    disabled={loading}
+                    className="flex-1 px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                  >
+                    {loading ? '删除中...' : '确认删除'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmDeleteAccount(false)}
+                    className="flex-1 px-4 py-2 bg-white text-slate-600 text-sm rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

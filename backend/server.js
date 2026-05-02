@@ -1,12 +1,17 @@
 import './loadEnv.js';
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import { paperRoutes } from './routes/paper.js';
 import { noteRoutes } from './routes/note.js';
 import { analyzeRoutes } from './routes/analyze.js';
 import { authRoutes } from './routes/auth.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5000;

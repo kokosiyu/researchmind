@@ -12,7 +12,7 @@ export const Footer = () => {
             <span>for researchers everywhere</span>
           </p>
           <p className="text-slate-500 mt-2 text-sm">
-            © 2024 ResearchMind. Empowering academic research through AI.
+            © 2024 ResearchMind. Empowering academic research through 锦木千束.
           </p>
         </div>
       </div>

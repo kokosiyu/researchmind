@@ -1,6 +1,49 @@
 import express from 'express';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 
 const router = express.Router();
+
+const noteImagesDir = path.join(process.cwd(), 'uploads', 'note-images');
+fs.mkdirSync(noteImagesDir, { recursive: true });
+
+const imageStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, noteImagesDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname).toLowerCase() || '.png';
+    cb(null, uniqueSuffix + ext);
+  },
+});
+
+const imageUpload = multer({
+  storage: imageStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: function (req, file, cb) {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('仅支持 JPG/PNG/GIF/WebP/BMP 格式的图片'));
+    }
+  },
+});
+
+router.post('/upload-image', (req, res) => {
+  imageUpload.single('image')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ message: err.message });
+    }
+    if (!req.file) {
+      return res.status(400).json({ message: '请选择要上传的图片' });
+    }
+    const imageUrl = `/uploads/note-images/${req.file.filename}`;
+    res.json({ url: imageUrl, filename: req.file.filename });
+  });
+});
 
 // 获取所有笔记
 router.get('/', async (req, res) => {

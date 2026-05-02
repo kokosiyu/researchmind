@@ -1,287 +1,289 @@
-// AI服务 - 论文总结和分析
-// 这里可以集成真实的大模型API，如OpenAI、Claude等
-
 class AIService {
   constructor() {
-    // 配置真实的大模型API
-    this.useRealAI = true; // 启用真实大模型
-    // DeepSeek API配置
-    this.apiKey = process.env.DEEPSEEK_API_KEY || ''; // 从环境变量读取API密钥
-    this.apiUrl = 'https://api.deepseek.com/v1/chat/completions';
+    this.apiKey = process.env.DEEPSEEK_API_KEY || '';
+    this.apiUrl = process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/v1/chat/completions';
+    this.model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+
+    if (!this.apiKey) {
+      console.warn('[AIService] 未配置 DEEPSEEK_API_KEY，AI 分析将使用本地基础提取模式');
+    }
   }
 
-  // 模拟的大模型总结
   async summarizePaper(text, filename) {
-    // 如果启用了真实AI，调用真实API
-    if (this.useRealAI && this.apiKey) {
+    if (this.apiKey) {
       try {
         return await this.callRealAI(text, filename);
       } catch (error) {
-        console.error('真实AI调用失败，回退到模拟模式:', error);
+        console.error('[AIService] AI 调用失败，回退到本地提取:', error.message);
       }
     }
 
-    // 模拟的大模型总结（演示用）
-    return this.simulateAISummary(text, filename);
+    return this.localExtraction(text, filename);
   }
 
-  // 模拟的AI总结
-  simulateAISummary(text, filename) {
-    const title = filename.replace(/\.[^/.]+$/, '');
-    
-    // 从文本中提取关键信息
-    const keywords = this.extractKeywords(text);
-    const hasIntroduction = text.includes('引言') || text.includes('Introduction');
-    const hasMethod = text.includes('方法') || text.includes('Method') || text.includes('方法');
-    const hasResults = text.includes('结果') || text.includes('Results');
-    const hasConclusion = text.includes('结论') || text.includes('Conclusion');
-
-    // 生成模拟的AI摘要
-    const summary = `## 论文总结
-
-### 研究背景
-这篇论文《${title}》研究了${title}相关的领域。
-${hasIntroduction ? '论文首先介绍了相关的研究背景和现状。' : ''}
-
-### 核心贡献
-本文的主要贡献包括：
-- 提出了新的方法和技术
-- 设计了创新的实验方案
-- 验证了方法的有效性
-
-### 研究方法
-${hasMethod ? '论文采用了严谨的研究方法，包括理论分析和实验验证。' : '论文采用了科学的研究方法。'}
-
-### 实验结果
-${hasResults ? '实验结果表明，所提出的方法在多个指标上都取得了显著的性能提升。' : '通过实验验证了方法的有效性。'}
-
-### 结论
-${hasConclusion ? '论文最后总结了研究成果，并展望了未来的研究方向。' : '论文对研究成果进行了总结。'}
-
----
-*注：此总结由模拟AI生成，实际使用时需要集成真实的大模型API。*`;
-
-    console.log('模拟AI总结，提取的关键词:', keywords);
-
-    return {
-      title: title,
-      authors: this.extractAuthors(text),
-      abstract: summary,
-      keywords: keywords,
-      year: this.extractYear(text, filename),
-      summary: summary,
-      content: text
-    };
-  }
-
-  // 调用DeepSeek API
   async callRealAI(text, filename) {
-    console.log('调用DeepSeek API...');
-    
-    try {
-      // 截断论文内容，确保DeepSeek API响应更快
-      // 为了更快的响应，我们限制在20000字符以内（约15000 tokens）
-      const maxCharacters = 20000;
-      let truncatedText = text;
-      if (text.length > maxCharacters) {
-        // 优先保留论文的开头（摘要、引言）和结尾（结论）部分
-        const firstPart = text.substring(0, Math.floor(maxCharacters * 0.7));
-        const lastPart = text.substring(text.length - Math.floor(maxCharacters * 0.3));
-        truncatedText = firstPart + '\n\n...[中间内容已截断]...\n\n' + lastPart;
-        console.log('论文内容过长，已截断至', maxCharacters, '字符（首尾各保留70%和30%）');
-      }
-      
-      // 构建请求数据
-      const requestData = {
-        model: "deepseek-chat",
-        messages: [
-          {
-            role: "user",
-            content: `请你作为一个专业的学术论文分析专家，帮我分析以下论文内容。
+    const maxCharacters = 20000;
+    let truncatedText = text;
+    if (text.length > maxCharacters) {
+      const firstPart = text.substring(0, Math.floor(maxCharacters * 0.7));
+      const lastPart = text.substring(text.length - Math.floor(maxCharacters * 0.3));
+      truncatedText = firstPart + '\n\n...[中间内容已截断]...\n\n' + lastPart;
+      console.log('[AIService] 论文内容已截断至', maxCharacters, '字符');
+    }
+
+    const requestData = {
+      model: this.model,
+      messages: [
+        {
+          role: "user",
+          content: `你是一个专业的学术论文分析专家。请分析以下论文内容并严格按照JSON格式输出结果。
 
 论文内容：
 ${truncatedText}
 
-请按照以下JSON格式输出分析结果，严格遵守格式：
+输出JSON格式：
 {
-  "title": "[论文标题]",
-  "authors": "[作者列表]",
-  "abstract": "[论文摘要]",
-  "summary": "## 论文总结\\n\\n### 研究背景\\n[研究背景内容]\\n\\n### 核心贡献\\n[核心贡献内容，使用列表形式]\\n\\n### 研究方法\\n[研究方法内容]\\n\\n### 实验结果\\n[实验结果内容]\\n\\n### 结论\\n[结论内容]",
+  "title": "论文标题（从内容中准确提取）",
+  "authors": "作者姓名列表",
+  "abstract": "论文摘要的简洁概括，200字以内",
+  "journal": "发表期刊或会议名称，如无法确定则为空字符串",
+  "year": 发表年份的数字，如无法确定则为null,
+  "doi": "DOI编号，如无法确定则为空字符串",
+  "summary": "## 论文总结\\n\\n### 研究背景\\n[2-3句话描述研究背景和动机]\\n\\n### 核心贡献\\n- [贡献1]\\n- [贡献2]\\n- [贡献3]\\n\\n### 研究方法\\n[描述主要方法和技术路线]\\n\\n### 实验结果\\n[描述关键实验结果和数据]\\n\\n### 结论\\n[总结主要结论和未来方向]",
   "keywords": ["关键词1", "关键词2", "关键词3", "关键词4", "关键词5"]
 }
 
-请确保：
-1. 关键词提取5-10个最核心的技术术语和研究主题
-2. 标题尽量从论文中提取准确
-3. 摘要简洁概括论文内容
-4. 所有字段都是字符串或字符串数组
-5. 只输出JSON，不要有其他文本说明`
-          }
-        ],
-        temperature: 0.3,
-        max_tokens: 2000,
-        response_format: { type: "json_object" }
-      };
-      
-      // 创建带超时的AbortController
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 480000); // 8分钟超时
-      
-      // 发送请求
-      console.log('发送请求到:', this.apiUrl);
-      
-      const response = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
-        },
-        body: JSON.stringify(requestData),
-        signal: controller.signal
-      });
-      
-      // 清除超时
-      clearTimeout(timeoutId);
-      
-      // 检查响应状态
-      console.log('响应状态:', response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('DeepSeek API返回错误:', response.status, errorText);
-        throw new Error(`API请求失败: ${response.status}`);
-      }
-      
-      // 读取响应内容
-      const responseText = await response.text();
-      console.log('响应内容预览:', responseText.substring(0, 500));
-      
-      // 尝试解析JSON响应
-      const data = JSON.parse(responseText);
-      
-      if (data.error) {
-        console.error('DeepSeek API错误:', data.error);
-        throw new Error(data.error.message || 'API错误');
-      }
-      
-      // 提取总结内容
-      const aiContent = data.choices?.[0]?.message?.content;
-      if (!aiContent) {
-        throw new Error('API返回内容为空');
-      }
-      
-      // 尝试解析AI返回的JSON
-      let aiResponse;
-      try {
-        aiResponse = JSON.parse(aiContent);
-      } catch (parseError) {
-        console.warn('DeepSeek返回非标准JSON，尝试清理:', parseError.message);
-        
-        // 尝试清理并提取JSON
-        const cleanContent = aiContent.replace(/```json|```/g, '').trim();
-        try {
-          aiResponse = JSON.parse(cleanContent);
-        } catch {
-          console.error('JSON解析失败，回退到模拟模式');
-          return this.simulateAISummary(text, filename);
+要求：
+1. keywords 提取5-10个核心术语，中英文均可
+2. title 必须从论文内容中提取，不能编造
+3. year 必须是数字类型
+4. 只输出JSON，不要包含其他文本`
         }
-      }
-      
-      const title = aiResponse.title || filename.replace(/\.[^/.]+$/, '');
-      
-      // 确保keywords是数组
-      let keywords = aiResponse.keywords || [];
-      if (typeof keywords === 'string') {
-        // 如果关键词是字符串，尝试分割
-        keywords = keywords.split(/[、，,;；\s]+/).filter(k => k.trim());
-      }
-      
-      // 如果关键词不够，使用提取方法补充
-      if (keywords.length < 5) {
-        const extractedKeywords = this.extractKeywords(text);
-        keywords = [...new Set([...keywords, ...extractedKeywords])].slice(0, 10);
-      }
-      
-      console.log('提取的关键词:', keywords);
-      
-      return {
-        title: title,
-        authors: aiResponse.authors || this.extractAuthors(text),
-        abstract: aiResponse.abstract || aiResponse.summary,
-        keywords: keywords,
-        year: this.extractYear(text, filename),
-        summary: aiResponse.summary,
-        content: text
-      };
-      
-    } catch (error) {
-      console.error('调用DeepSeek API失败:', error);
-      console.error('错误详情:', error.stack);
-      
-      // 超时或其他错误，回退到模拟模式
-      return this.simulateAISummary(text, filename);
+      ],
+      temperature: 0.2,
+      max_tokens: 2500,
+      response_format: { type: "json_object" }
+    };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000);
+
+    console.log('[AIService] 发送请求到:', this.apiUrl);
+
+    const response = await fetch(this.apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify(requestData),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[AIService] API 返回错误:', response.status, errorText);
+      throw new Error(`API 请求失败 (${response.status}): ${errorText.substring(0, 200)}`);
+    }
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(`API 错误: ${data.error.message || JSON.stringify(data.error)}`);
+    }
+
+    const aiContent = data.choices?.[0]?.message?.content;
+    if (!aiContent) {
+      throw new Error('API 返回内容为空');
+    }
+
+    const aiResponse = this.parseAIResponse(aiContent);
+    let keywords = this.normalizeKeywords(aiResponse.keywords);
+
+    if (keywords.length < 3) {
+      keywords = this.extractKeywords(text, keywords);
+    }
+
+    return {
+      title: aiResponse.title || filename.replace(/\.[^/.]+$/, ''),
+      authors: aiResponse.authors || this.extractAuthors(text),
+      abstract: aiResponse.abstract || '',
+      journal: aiResponse.journal || '',
+      year: aiResponse.year || this.extractYear(text, filename),
+      doi: aiResponse.doi || '',
+      keywords: keywords,
+      summary: aiResponse.summary || '',
+      content: text
+    };
+  }
+
+  parseAIResponse(content) {
+    try {
+      return JSON.parse(content);
+    } catch {
+      const cleaned = content.replace(/```json\s*|```/g, '').trim();
+      return JSON.parse(cleaned);
     }
   }
 
-  // 提取关键词
-  extractKeywords(text) {
-    const keywordLibrary = [
-      '人工智能', '机器学习', '深度学习', '神经网络', '自然语言处理',
-      '计算机视觉', '数据挖掘', '知识图谱', '图神经网络', '强化学习',
-      '卷积神经网络', '循环神经网络', 'Transformer', 'BERT',
-      '大数据', '云计算', '物联网', '区块链', '量子计算',
-      '计算机科学', '软件工程', '算法', '数据结构', '操作系统',
-      '网络安全', '密码学', '分布式系统', '并行计算', '高性能计算',
-      '数据库', '信息检索', '推荐系统', '搜索引擎', 'Web技术',
-      '移动计算', '普适计算', '虚拟现实', '增强现实', '人机交互',
-      '科学计算', '数值分析', '优化算法', '近似算法', '随机算法'
+  normalizeKeywords(keywords) {
+    if (!keywords) return [];
+    if (typeof keywords === 'string') {
+      return keywords.split(/[、，,;；\s]+/).map(k => k.trim()).filter(Boolean);
+    }
+    if (Array.isArray(keywords)) {
+      return keywords.map(k => String(k).trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  localExtraction(text, filename) {
+    const title = this.extractTitle(text, filename);
+    const authors = this.extractAuthors(text);
+    const abstract = this.extractAbstract(text);
+    const keywords = this.extractKeywords(text);
+    const year = this.extractYear(text, filename);
+
+    return {
+      title,
+      authors,
+      abstract,
+      journal: '',
+      year,
+      doi: '',
+      keywords,
+      summary: abstract || `本文档《${title}》由 ${authors} 撰写，共包含 ${text.length} 字符的内容。`,
+      content: text
+    };
+  }
+
+  extractTitle(text, filename) {
+    const titlePatterns = [
+      /^[\s\S]{0,200}(?:题目|标题|Title)[：:]\s*(.+)/im,
+      /^[\s\S]{0,200}(?:论文题目)[：:]\s*(.+)/im,
     ];
 
-    const keywords = [];
-    const lowerText = text.toLowerCase();
-
-    for (const keyword of keywordLibrary) {
-      if (lowerText.includes(keyword.toLowerCase())) {
-        keywords.push(keyword);
+    for (const pattern of titlePatterns) {
+      const match = text.match(pattern);
+      if (match && match[1].trim().length > 2) {
+        return match[1].trim().substring(0, 200);
       }
     }
 
-    if (keywords.length < 5) {
-      keywords.push('学术研究', '自动分析', '数据提取');
+    const firstLines = text.split('\n').filter(l => l.trim()).slice(0, 5);
+    for (const line of firstLines) {
+      const trimmed = line.trim();
+      if (trimmed.length >= 5 && trimmed.length <= 200 && !/^\d/.test(trimmed)) {
+        return trimmed;
+      }
     }
 
-    return keywords.slice(0, 10);
+    return filename.replace(/\.[^/.]+$/, '');
   }
 
-  // 提取作者
   extractAuthors(text) {
-    const authorPatterns = [
-      /作者[：:]\s*(.+)/,
-      /Author[s]*[：:]\s*(.+)/,
-      /(.+?)\s*[，,]\s*(.+?)\s*[，,]\s*(.+)/
+    const patterns = [
+      /(?:作者|Author[s]?|By)[：:]\s*(.+)/i,
+      /\b([A-Z][a-z]+(?:\s+[A-Z]\.?\s*)*[A-Z][a-z]+(?:\s*,\s*[A-Z][a-z]+(?:\s+[A-Z]\.?\s*)*[A-Z][a-z]+)*)\b/,
     ];
 
-    for (const pattern of authorPatterns) {
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match && match[1].trim().length > 2) {
+        return match[1].trim().substring(0, 500);
+      }
+    }
+
+    return '';
+  }
+
+  extractAbstract(text) {
+    const patterns = [
+      /(?:摘要|Abstract)[：:\s]*([\s\S]{20,500}?)(?:\n\s*(?:关键词|Keywords|Key\s*words|引言|Introduction|1\.|I\.))/i,
+      /(?:摘要|Abstract)[：:\s]*([\s\S]{20,500}?)(?:\n\n|\n\s*\n)/i,
+    ];
+
+    for (const pattern of patterns) {
       const match = text.match(pattern);
       if (match) {
-        return match[1];
+        return match[1].replace(/\s+/g, ' ').trim();
       }
     }
 
-    return '研究团队';
+    return '';
   }
 
-  // 提取年份
-  extractYear(text, filename) {
-    const yearMatch = text.match(/(?:20|19)\d{2}/);
-    if (yearMatch) {
-      return parseInt(yearMatch[0]);
+  extractKeywords(text, existingKeywords = []) {
+    const keywordSet = new Set(existingKeywords);
+
+    const keywordPatterns = [
+      /(?:关键词|Keywords|Key\s*words)[：:]\s*(.+)/i,
+    ];
+
+    for (const pattern of keywordPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        const raw = match[1].split(/[、，,;；\n]+/).map(k => k.trim()).filter(k => k.length >= 2 && k.length <= 20);
+        raw.forEach(k => keywordSet.add(k));
+        if (keywordSet.size >= 5) return [...keywordSet].slice(0, 10);
+      }
     }
 
-    const filenameYearMatch = filename.match(/(?:20|19)\d{2}/);
-    if (filenameYearMatch) {
-      return parseInt(filenameYearMatch[0]);
+    const termFrequency = {};
+    const candidates = text.match(/[\u4e00-\u9fa5]{2,8}|[A-Z][a-zA-Z]{2,}/g) || [];
+    const stopwords = new Set([
+      '的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很',
+      '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这', '他', '她', '它',
+      '们', '我们', '他们', '这些', '那些', '什么', '可以', '但是', '如果', '因为', '所以', '虽然',
+      '而且', '或者', '以及', '但是', '然而', '因此', '通过', '进行', '使用', '采用', '提出',
+      '本文', '论文', '研究', '方法', '结果', '表明', '问题', '方面', '工作', '系统', '模型',
+      'Based', 'Using', 'With', 'This', 'That', 'These', 'Those', 'From', 'Have', 'Been',
+      'Were', 'Will', 'Would', 'Could', 'Should', 'Their', 'They', 'Our', 'Also',
+    ]);
+
+    for (const term of candidates) {
+      if (stopwords.has(term)) continue;
+      if (term.length < 3 && !/[\u4e00-\u9fa5]/.test(term)) continue;
+      termFrequency[term] = (termFrequency[term] || 0) + 1;
+    }
+
+    const sorted = Object.entries(termFrequency)
+      .filter(([, count]) => count >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .map(([term]) => term);
+
+    for (const term of sorted) {
+      keywordSet.add(term);
+      if (keywordSet.size >= 10) break;
+    }
+
+    if (keywordSet.size === 0) {
+      return ['学术研究'];
+    }
+
+    return [...keywordSet].slice(0, 10);
+  }
+
+  extractYear(text, filename) {
+    const yearPatterns = [
+      /(?:20|19)\d{2}(?=[^\d])/,
+    ];
+
+    for (const pattern of yearPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        const year = parseInt(match[0]);
+        if (year >= 1900 && year <= new Date().getFullYear() + 1) {
+          return year;
+        }
+      }
+    }
+
+    const filenameYear = filename.match(/(20|19)\d{2}/);
+    if (filenameYear) {
+      return parseInt(filenameYear[0]);
     }
 
     return new Date().getFullYear();

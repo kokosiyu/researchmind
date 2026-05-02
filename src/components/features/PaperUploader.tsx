@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Upload, X, FileText, CheckCircle, Edit } from 'lucide-react';
 import { motion } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
 import { useAppStore } from '../../store/useAppStore';
 import { analyzeApi } from '../../services/api';
 
@@ -23,7 +24,6 @@ export const PaperUploader = () => {
 
   const { addPaper, isProcessingPaper, processingPaper, setProcessingPaper } = useAppStore();
   
-  // 同步全局处理状态到本地
   useEffect(() => {
     if (isProcessingPaper) {
       setAnalysisResult({
@@ -65,14 +65,12 @@ export const PaperUploader = () => {
     setUploadedFile(file);
     setAnalysisResult(null);
     
-    // 设置全局处理状态
     setProcessingPaper(true, {
       title: file.name.replace(/\.[^/.]+$/, ''),
       status: '正在调用 DeepSeek AI 进行论文分析...'
     });
     
     try {
-      // 调用后端API分析论文
       console.log('开始上传文件:', file.name);
       console.log('文件大小:', (file.size / 1024 / 1024).toFixed(2), 'MB');
       
@@ -83,31 +81,19 @@ export const PaperUploader = () => {
       console.log('分析完成，耗时:', (endTime - startTime) / 1000, '秒');
       console.log('分析结果:', result);
       
-      // 保存分析结果
       setAnalysisResult(result);
-      
-      // 自动保存论文，无需用户手动填写或审查
       await addPaper(result);
       
-      // 重置上传状态
       setUploadedFile(null);
       setProcessingPaper(false);
     } catch (error: unknown) {
       console.error('分析论文失败:', error);
       
-      // 获取后端返回的错误消息
       const ax = error as { response?: { data?: { message?: string }; status?: number }; message?: string };
       const serverMsg = ax?.response?.data?.message;
       const status = ax?.response?.status;
       const hint = serverMsg || ax?.message || '请确认后端已启动，且文件未超过大小限制（50MB）。';
       
-      console.error('错误详情:', {
-        status,
-        serverMsg,
-        message: ax?.message
-      });
-      
-      // 设置分析结果为错误状态
       setAnalysisResult({
         title: '分析失败',
         authors: '-',
@@ -141,7 +127,6 @@ ${status || '未知'}
         processing: false
       });
       
-      // 重置上传状态
       setUploadedFile(null);
       setProcessingPaper(false);
     }
@@ -229,50 +214,88 @@ ${status || '未知'}
               </>
             )}
             
-            {/* 显示分析结果 */}
-            <div className="w-full max-w-4xl p-8 bg-white rounded-xl shadow-md border border-slate-200">
-              <h3 className="text-2xl font-bold text-slate-900 mb-6 text-center">{analysisResult.title}</h3>
-              <p className="text-slate-600 mb-8 text-center">作者：{analysisResult.authors}</p>
-              {analysisResult.filePath && analysisResult.fileName && (
-                <div className="mb-8 text-center">
-                  <a 
-                    href={`/uploads/${analysisResult.filePath}`} 
-                    download={analysisResult.fileName}
-                    className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm px-4 py-2 bg-blue-50 rounded-lg transition-colors"
-                  >
-                    <FileText className="w-4 h-4 mr-2" />
-                    下载论文文件
-                  </a>
+            <div className="w-full max-w-4xl text-left">
+              <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-6">
+                  <h3 className="text-2xl font-bold text-white leading-tight">{analysisResult.title}</h3>
+                  <p className="text-blue-100 mt-2 text-sm">作者：{analysisResult.authors}</p>
                 </div>
-              )}
-              <div className="prose max-w-none mx-auto space-y-6">
-                {analysisResult.summary ? (
-                  <div dangerouslySetInnerHTML={{ __html: String(analysisResult.summary) }} />
-                ) : (
-                  <p className="text-sm text-slate-700 leading-relaxed">{analysisResult.abstract}</p>
-                )}
-              </div>
-              {Array.isArray(analysisResult.keywords) && analysisResult.keywords.length > 0 && (
-                <div className="mt-8 pt-6 border-t border-slate-200">
-                  <h4 className="text-lg font-semibold text-slate-800 mb-3">关键词</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {analysisResult.keywords.map((keyword, idx) => (
-                      <span
-                        key={idx}
-                        className="px-3 py-1.5 bg-blue-100 text-blue-700 text-sm rounded-full"
+
+                <div className="px-8 py-6">
+                  {(analysisResult.journal && analysisResult.journal !== '-') || analysisResult.year ? (
+                    <div className="flex flex-wrap items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+                      {analysisResult.journal && analysisResult.journal !== '-' && (
+                        <span className="inline-flex items-center px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-medium rounded-full">
+                          {analysisResult.journal}
+                        </span>
+                      )}
+                      {analysisResult.year && (
+                        <span className="inline-flex items-center px-3 py-1 bg-slate-100 text-slate-600 text-xs font-medium rounded-full">
+                          {analysisResult.year}
+                        </span>
+                      )}
+                      {analysisResult.doi && (
+                        <span className="inline-flex items-center px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-full">
+                          DOI: {analysisResult.doi}
+                        </span>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {analysisResult.filePath && analysisResult.fileName && (
+                    <div className="mb-6">
+                      <a 
+                        href={`/uploads/${analysisResult.filePath}`} 
+                        download={analysisResult.fileName}
+                        className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm px-4 py-2 bg-blue-50 rounded-lg transition-colors"
                       >
-                        {keyword}
-                      </span>
-                    ))}
+                        <FileText className="w-4 h-4 mr-2" />
+                        下载论文文件
+                      </a>
+                    </div>
+                  )}
+
+                  <div className="prose prose-slate max-w-none
+                    prose-headings:text-slate-800 prose-headings:font-bold
+                    prose-h2:text-xl prose-h2:mt-8 prose-h2:mb-4 prose-h2:pb-2 prose-h2:border-b prose-h2:border-slate-100
+                    prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-3 prose-h3:text-blue-700
+                    prose-h4:text-base prose-h4:mt-4 prose-h4:mb-2
+                    prose-p:text-slate-600 prose-p:leading-relaxed prose-p:mb-3
+                    prose-strong:text-slate-700 prose-strong:font-semibold
+                    prose-ul:my-3 prose-ul:space-y-1 prose-ol:my-3 prose-ol:space-y-1
+                    prose-li:text-slate-600 prose-li:leading-relaxed
+                    prose-a:text-blue-600 prose-a:no-underline hover:prose-a:underline
+                    prose-blockquote:border-l-blue-400 prose-blockquote:bg-blue-50/50 prose-blockquote:py-1 prose-blockquote:px-4 prose-blockquote:rounded-r-lg
+                    prose-code:text-pink-600 prose-code:bg-pink-50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:font-normal
+                    prose-pre:bg-slate-900 prose-pre:rounded-xl prose-pre:p-4
+                    prose-table:border-collapse prose-th:bg-slate-50 prose-th:px-4 prose-th:py-2 prose-th:text-left prose-th:font-semibold prose-th:text-slate-700 prose-td:px-4 prose-td:py-2 prose-td:border-t prose-td:border-slate-100
+                  ">
+                    <ReactMarkdown>{String(analysisResult.summary || analysisResult.abstract || '')}</ReactMarkdown>
                   </div>
+
+                  {Array.isArray(analysisResult.keywords) && analysisResult.keywords.length > 0 && (
+                    <div className="mt-8 pt-6 border-t border-slate-100">
+                      <h4 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">关键词</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {analysisResult.keywords.map((keyword, idx) => (
+                          <span
+                            key={idx}
+                            className="px-3 py-1.5 bg-blue-50 text-blue-700 text-sm rounded-full border border-blue-100 hover:bg-blue-100 transition-colors"
+                          >
+                            {keyword}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
             
             {!analysisResult.processing && (
               <button
                 onClick={resetUpload}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all hover:shadow-lg font-medium"
               >
                 上传另一篇论文
               </button>

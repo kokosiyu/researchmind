@@ -5,6 +5,41 @@ import mammoth from 'mammoth';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import WordExtractor from 'word-extractor';
 
+function fixDoubleEncoding(text) {
+  if (!text || text.length < 5) return text;
+  try {
+    const encoded = iconv.encode(text, 'gbk');
+    const decoded = iconv.decode(encoded, 'utf8');
+    const chineseCount = (decoded.match(/[\u4e00-\u9fa5]/g) || []).length;
+    const originalChineseCount = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+    const hasReplacement = decoded.includes('\ufffd');
+    if (chineseCount > originalChineseCount && !hasReplacement) {
+      console.log('检测到双重编码，已自动修复');
+      return decoded;
+    }
+  } catch {}
+  try {
+    const encoded = iconv.encode(text, 'latin1');
+    const decoded = encoded.toString('utf8');
+    const chineseCount = (decoded.match(/[\u4e00-\u9fa5]/g) || []).length;
+    const originalChineseCount = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+    const hasReplacement = decoded.includes('\ufffd');
+    if (chineseCount > originalChineseCount * 2 && !hasReplacement) {
+      console.log('检测到 latin1 双重编码，已自动修复');
+      return decoded;
+    }
+  } catch {}
+  return text;
+}
+
+function isValidChineseText(text) {
+  if (!text) return true;
+  const chinese = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+  const garbled = (text.match(/[\uE000-\uF8FF]/g) || []).length;
+  if (chinese > 0 && garbled > chinese * 0.3) return false;
+  return true;
+}
+
 // 判断文本编码：BOM + 替换字符比例 + 简繁启发式
 export function detectEncoding(buffer) {
   const BOM_UTF8 = buffer.slice(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]));
@@ -67,16 +102,26 @@ export async function extractTextFromFile(filePath, originalName) {
       case '.pdf': {
         console.log('解析 PDF 文件:', originalName);
         try {
-          const pdfData = await pdfParse(buffer);
+          const pdfData = await pdfParse(buffer, {
+            max: 0,
+            version: 'v2.0.550'
+          });
           text = pdfData.text || '';
-          console.log('PDF 解析成功，文本长度:', text.length);
+          console.log('PDF 解析成功，文本长度:', text.length, '页数:', pdfData.numpages || '未知');
           if (!text.trim()) {
-            console.warn('PDF 文本为空，尝试其他方式');
-            text = `PDF文件: ${originalName}`;
+            console.warn('PDF 文本为空，可能是扫描件或加密PDF');
+            text = `PDF文件: ${originalName}（文本为空，可能是扫描件）`;
           }
         } catch (pdfErr) {
-          console.error('PDF 解析失败:', pdfErr);
-          text = `PDF文件: ${originalName}`;
+          console.error('PDF 解析失败:', pdfErr.message);
+          try {
+            const altData = await pdfParse(buffer);
+            text = altData.text || '';
+            console.log('PDF 第二次解析成功，文本长度:', text.length);
+          } catch (altErr) {
+            console.error('PDF 第二次解析也失败:', altErr.message);
+            text = `PDF文件: ${originalName}`;
+          }
         }
         break;
       }
@@ -85,9 +130,12 @@ export async function extractTextFromFile(filePath, originalName) {
         try {
           const result = await mammoth.extractRawText({ path: filePath });
           text = result.value || '';
+          if (result.messages && result.messages.length > 0) {
+            console.warn('DOCX 解析警告:', result.messages.map(m => m.message).join('; '));
+          }
           console.log('DOCX 解析成功，文本长度:', text.length);
         } catch (docxErr) {
-          console.error('DOCX 解析失败:', docxErr);
+          console.error('DOCX 解析失败:', docxErr.message);
           text = `DOCX文件: ${originalName}`;
         }
         break;
@@ -100,8 +148,15 @@ export async function extractTextFromFile(filePath, originalName) {
           text = docData.getBody() || '';
           console.log('DOC 解析成功，文本长度:', text.length);
         } catch (docErr) {
-          console.error('DOC 解析失败:', docErr);
-          text = `DOC文件: ${originalName}`;
+          console.error('DOC 解析失败:', docErr.message);
+          try {
+            const result = await mammoth.extractRawText({ path: filePath });
+            text = result.value || '';
+            console.log('DOC 使用 mammoth 回退解析成功，文本长度:', text.length);
+          } catch (fallbackErr) {
+            console.error('DOC 回退解析也失败:', fallbackErr.message);
+            text = `DOC文件: ${originalName}`;
+          }
         }
         break;
       }
@@ -115,10 +170,19 @@ export async function extractTextFromFile(filePath, originalName) {
           const encoding = detectEncoding(buffer);
           console.log('检测到的编码:', encoding);
           text = iconv.decode(buffer, encoding);
+          const invalidRatio = (text.match(/\ufffd/g) || []).length / Math.max(text.length, 1);
+          if (invalidRatio > 0.1) {
+            console.warn('解码后无效字符比例过高，尝试 UTF-8');
+            text = iconv.decode(buffer, 'utf8');
+          }
           console.log('文本解析成功，长度:', text.length);
         } catch (textErr) {
-          console.error('文本文件解析失败:', textErr);
-          text = `文本文件: ${originalName}`;
+          console.error('文本文件解析失败:', textErr.message);
+          try {
+            text = buffer.toString('utf8');
+          } catch {
+            text = `文本文件: ${originalName}`;
+          }
         }
         break;
       }
@@ -129,8 +193,10 @@ export async function extractTextFromFile(filePath, originalName) {
       }
     }
 
-    // 清理文本（移除多余空白）
-    text = text.replace(/\r\n/g, '\n').replace(/\s+/g, ' ').trim();
+    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    text = text.replace(/[ \t]+/g, ' ');
+    text = text.replace(/\n{3,}/g, '\n\n');
+    text = text.trim();
 
     if (!text) {
       return {
@@ -138,6 +204,15 @@ export async function extractTextFromFile(filePath, originalName) {
         text: '',
         message: '文档内容为空或无法有效提取'
       };
+    }
+
+    if (!isValidChineseText(text)) {
+      console.log('检测到可能的编码错误，尝试修复...');
+      const fixed = fixDoubleEncoding(text);
+      if (isValidChineseText(fixed) && fixed !== text) {
+        console.log('编码修复成功');
+        text = fixed;
+      }
     }
 
     return {

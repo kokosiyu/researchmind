@@ -3,6 +3,30 @@ import { authService } from '../services/authService.js';
 
 const router = express.Router();
 
+function authenticate(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: '未提供认证令牌' });
+  }
+
+  const token = authHeader.substring(7);
+  const userInfo = authService.extractUserFromToken(token);
+
+  if (!userInfo) {
+    return res.status(401).json({ message: '无效的认证令牌' });
+  }
+
+  req.user = userInfo;
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ message: '需要管理员权限' });
+  }
+  next();
+}
+
 // 注册
 router.post('/register', async (req, res) => {
   try {
@@ -89,22 +113,9 @@ router.post('/login', async (req, res) => {
 });
 
 // 获取当前用户信息
-router.get('/me', async (req, res) => {
+router.get('/me', authenticate, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ message: '未提供认证令牌' });
-    }
-
-    const token = authHeader.substring(7);
-    const userInfo = authService.extractUserFromToken(token);
-
-    if (!userInfo) {
-      return res.status(401).json({ message: '无效的认证令牌' });
-    }
-
-    // 从数据库获取完整用户信息
-    const user = await req.db.get('SELECT id, username, email, role, createdAt, updatedAt FROM users WHERE id = ?', [userInfo.id]);
+    const user = await req.db.get('SELECT id, username, email, role, createdAt, updatedAt FROM users WHERE id = ?', [req.user.id]);
     if (!user) {
       return res.status(404).json({ message: '用户不存在' });
     }
@@ -117,43 +128,28 @@ router.get('/me', async (req, res) => {
 });
 
 // 更新用户信息
-router.put('/me', async (req, res) => {
+router.put('/me', authenticate, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ message: '未提供认证令牌' });
-    }
-
-    const token = authHeader.substring(7);
-    const userInfo = authService.extractUserFromToken(token);
-
-    if (!userInfo) {
-      return res.status(401).json({ message: '无效的认证令牌' });
-    }
-
     const { username, email } = req.body;
 
     if (!username && !email) {
       return res.status(400).json({ message: '至少需要提供用户名或邮箱' });
     }
 
-    // 检查用户名是否已存在（排除当前用户）
     if (username) {
-      const existingUser = await req.db.get('SELECT id FROM users WHERE username = ? AND id != ?', [username, userInfo.id]);
+      const existingUser = await req.db.get('SELECT id FROM users WHERE username = ? AND id != ?', [username, req.user.id]);
       if (existingUser) {
         return res.status(400).json({ message: '用户名已存在' });
       }
     }
 
-    // 检查邮箱是否已存在（排除当前用户）
     if (email) {
-      const existingEmail = await req.db.get('SELECT id FROM users WHERE email = ? AND id != ?', [email, userInfo.id]);
+      const existingEmail = await req.db.get('SELECT id FROM users WHERE email = ? AND id != ?', [email, req.user.id]);
       if (existingEmail) {
         return res.status(400).json({ message: '邮箱已存在' });
       }
     }
 
-    // 构建更新语句
     const updates = [];
     const params = [];
     
@@ -168,12 +164,11 @@ router.put('/me', async (req, res) => {
     }
     
     updates.push('updatedAt = CURRENT_TIMESTAMP');
-    params.push(userInfo.id);
+    params.push(req.user.id);
 
     await req.db.run(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
 
-    // 获取更新后的用户信息
-    const updatedUser = await req.db.get('SELECT id, username, email, role, createdAt, updatedAt FROM users WHERE id = ?', [userInfo.id]);
+    const updatedUser = await req.db.get('SELECT id, username, email, role, createdAt, updatedAt FROM users WHERE id = ?', [req.user.id]);
 
     res.json({
       message: '用户信息更新成功',
@@ -186,22 +181,9 @@ router.put('/me', async (req, res) => {
 });
 
 // 删除用户
-router.delete('/me', async (req, res) => {
+router.delete('/me', authenticate, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ message: '未提供认证令牌' });
-    }
-
-    const token = authHeader.substring(7);
-    const userInfo = authService.extractUserFromToken(token);
-
-    if (!userInfo) {
-      return res.status(401).json({ message: '无效的认证令牌' });
-    }
-
-    // 删除用户
-    await req.db.run('DELETE FROM users WHERE id = ?', [userInfo.id]);
+    await req.db.run('DELETE FROM users WHERE id = ?', [req.user.id]);
 
     res.json({ message: '用户删除成功' });
   } catch (error) {
@@ -211,20 +193,8 @@ router.delete('/me', async (req, res) => {
 });
 
 // 获取所有用户（仅管理员）
-router.get('/', async (req, res) => {
+router.get('/', authenticate, requireAdmin, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ message: '未提供认证令牌' });
-    }
-
-    const token = authHeader.substring(7);
-    const userInfo = authService.extractUserFromToken(token);
-
-    if (!userInfo || userInfo.role !== 'admin') {
-      return res.status(403).json({ message: '需要管理员权限' });
-    }
-
     const users = await req.db.all('SELECT id, username, email, role, createdAt, updatedAt FROM users');
 
     res.json({ users });

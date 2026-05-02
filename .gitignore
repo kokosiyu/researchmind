@@ -12,6 +12,29 @@ dist
 dist-ssr
 *.local
 
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Build output (frontend)
+backend/public/
+
+# Test files
+backend/test.*
+
+# Old project copy
+researchmind/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

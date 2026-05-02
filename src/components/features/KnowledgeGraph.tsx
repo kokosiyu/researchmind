@@ -1,160 +1,316 @@
 import { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { useAppStore } from '../../store/useAppStore';
+import type { Paper } from '../../types';
 
 interface KnowledgeGraphProps {
+  paper?: Paper | null;
   onNodeClick?: (node: any) => void;
+  onKeywordClick?: (keyword: string, paper: Paper) => void;
 }
 
-export const KnowledgeGraph = ({ onNodeClick }: KnowledgeGraphProps) => {
-  const svgRef = useRef(null);
+interface GraphNode {
+  id: string;
+  label: string;
+  type: 'paper' | 'keyword' | 'related';
+  size: number;
+  data: any;
+  x?: number;
+  y?: number;
+  fx?: number | null;
+  fy?: number | null;
+}
+
+interface GraphLink {
+  source: string | GraphNode;
+  target: string | GraphNode;
+  type: 'has-keyword' | 'similar';
+  value: number;
+}
+
+let _measureCanvas: HTMLCanvasElement | null = null;
+function measureTextWidth(text: string, fontSize: number, fontWeight: number): number {
+  if (!_measureCanvas) _measureCanvas = document.createElement('canvas');
+  const ctx = _measureCanvas.getContext('2d');
+  if (!ctx) return text.length * fontSize * 0.7;
+  ctx.font = `${fontWeight} ${fontSize}px "Segoe UI", system-ui, sans-serif`;
+  return ctx.measureText(text).width * 1.35;
+}
+
+function wrapText(text: string, maxWidth: number, fontSize: number, fontWeight: number): string[] {
+  const lines: string[] = [];
+  let currentLine = '';
+  for (const char of text) {
+    const testLine = currentLine + char;
+    const w = measureTextWidth(testLine, fontSize, fontWeight);
+    if (w > maxWidth && currentLine.length > 0) {
+      lines.push(currentLine);
+      currentLine = char;
+    } else {
+      currentLine = testLine;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+  return lines;
+}
+
+export const KnowledgeGraph = ({ paper, onNodeClick, onKeywordClick }: KnowledgeGraphProps) => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const { graphData, papers } = useAppStore();
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const containerRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filteredNodes, setFilteredNodes] = useState(graphData.nodes);
-  const [filteredLinks, setFilteredLinks] = useState(graphData.links);
   const [showLegend, setShowLegend] = useState(true);
+  const callbacksRef = useRef({ onNodeClick, onKeywordClick, paper });
+  callbacksRef.current = { onNodeClick, onKeywordClick, paper };
 
   useEffect(() => {
     const updateDimensions = () => {
       if (containerRef.current) {
         const { clientWidth, clientHeight } = containerRef.current;
-        setDimensions({ width: clientWidth, height: Math.max(600, clientHeight) });
+        setDimensions({ width: clientWidth, height: Math.max(500, clientHeight) });
       }
     };
-
     updateDimensions();
     window.addEventListener('resize', updateDimensions);
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
-  useEffect(() => {
-    if (searchTerm) {
-      const lowerSearchTerm = searchTerm.toLowerCase();
-      const filtered = graphData.nodes.filter(node => 
-        node.label.toLowerCase().includes(lowerSearchTerm)
-      );
-      const filteredNodeIds = new Set(filtered.map(node => node.id));
-      const filteredLinks = graphData.links.filter(link => 
-        filteredNodeIds.has((link.source as any).id) && filteredNodeIds.has((link.target as any).id)
-      );
-      setFilteredNodes(filtered);
-      setFilteredLinks(filteredLinks);
-    } else {
-      setFilteredNodes(graphData.nodes);
-      setFilteredLinks(graphData.links);
-    }
-  }, [graphData, searchTerm]);
+  const buildSinglePaperGraph = (p: Paper): { nodes: GraphNode[]; links: GraphLink[] } => {
+    const nodes: GraphNode[] = [];
+    const links: GraphLink[] = [];
+
+    nodes.push({
+      id: p.id,
+      label: p.title,
+      type: 'paper',
+      size: 28,
+      data: p
+    });
+
+    const keywords = Array.isArray(p.keywords) ? p.keywords : [];
+    keywords.forEach((kw) => {
+      const kwId = 'kw-' + kw;
+      nodes.push({ id: kwId, label: kw, type: 'keyword', size: 22, data: null });
+      links.push({ source: p.id, target: kwId, type: 'has-keyword', value: 2 });
+    });
+
+    const relatedPaperIds = new Set<string>();
+    papers.forEach((other) => {
+      if (other.id === p.id) return;
+      const otherKw = Array.isArray(other.keywords) ? other.keywords : [];
+      const common = keywords.filter((k) => otherKw.includes(k));
+      if (common.length > 0 && !relatedPaperIds.has(other.id)) {
+        relatedPaperIds.add(other.id);
+        const shortTitle = other.title.length > 16 ? other.title.substring(0, 16) + '...' : other.title;
+        nodes.push({
+          id: 'rel-' + other.id,
+          label: shortTitle,
+          type: 'related',
+          size: 14,
+          data: other
+        });
+        links.push({ source: p.id, target: 'rel-' + other.id, type: 'similar', value: common.length });
+
+        common.forEach((kw) => {
+          const kwId = 'kw-' + kw;
+          const existingKw = nodes.find((n) => n.id === kwId);
+          if (existingKw) {
+            links.push({ source: 'rel-' + other.id, target: kwId, type: 'has-keyword', value: 1 });
+          }
+        });
+      }
+    });
+
+    return { nodes, links };
+  };
 
   useEffect(() => {
-    if (!svgRef.current || dimensions.width === 0 || filteredNodes.length === 0) return;
+    if (!svgRef.current || dimensions.width === 0) return;
+
+    let nodes: GraphNode[];
+    let links: GraphLink[];
+
+    if (paper) {
+      const g = buildSinglePaperGraph(paper);
+      nodes = g.nodes;
+      links = g.links;
+    } else {
+      nodes = graphData.nodes as GraphNode[];
+      links = graphData.links as GraphLink[];
+    }
+
+    if (nodes.length === 0) return;
 
     setIsLoading(true);
 
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
 
+    const defs = svg.append('defs');
+    const gradient = defs.append('linearGradient')
+      .attr('id', 'paperGradient')
+      .attr('x1', '0%').attr('y1', '0%')
+      .attr('x2', '100%').attr('y2', '100%');
+    gradient.append('stop').attr('offset', '0%').attr('stop-color', '#fef9c3');
+    gradient.append('stop').attr('offset', '100%').attr('stop-color', '#fde68a');
+
     const g = svg.append('g');
 
-    const zoom = d3.zoom()
+    const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 5])
       .on('zoom', (event) => {
         g.attr('transform', event.transform);
       });
-
     svg.call(zoom);
 
-    // 根据节点数量调整力导向参数
-    const nodeCount = filteredNodes.length;
-    const linkDistance = nodeCount > 50 ? 120 : 150;
-    const chargeStrength = nodeCount > 50 ? -1200 : -800;
-    const collisionRadius = (d) => d.type === 'paper' ? 90 : 35;
+    const nodeCount = nodes.length;
+    const linkDistance = paper ? 200 : (nodeCount > 50 ? 160 : 200);
+    const chargeStrength = paper ? -1200 : (nodeCount > 50 ? -1800 : -1400);
 
-    const simulation = d3.forceSimulation(filteredNodes)
-      .force('link', d3.forceLink(filteredLinks).id((d) => d.id).distance(linkDistance))
+    const simulation = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(links).id((d: any) => d.id).distance(linkDistance))
       .force('charge', d3.forceManyBody().strength(chargeStrength))
       .force('center', d3.forceCenter(dimensions.width / 2, dimensions.height / 2))
-      .force('collision', d3.forceCollide().radius(collisionRadius).iterations(2));
+      .force('collision', d3.forceCollide().radius((d: any) => {
+        if (d.type === 'paper') return 130;
+        if (d.type === 'related') return 70;
+        return 55;
+      }).iterations(3));
 
-    // 增加布局稳定性
     simulation.alpha(1).alphaTarget(0).restart();
-    
-    // 运行更多的迭代以获得更好的布局
-    const iterations = nodeCount > 100 ? 500 : 300;
+    const iterations = paper ? 200 : (nodeCount > 100 ? 500 : 300);
     for (let i = 0; i < iterations; i++) {
       simulation.tick();
     }
 
-    // 为大量节点优化渲染
-    const linkOpacity = nodeCount > 100 ? 0.4 : 0.6;
+    const linkOpacity = paper ? 0.5 : (nodeCount > 100 ? 0.4 : 0.6);
 
     const link = g.append('g')
       .selectAll('line')
-      .data(filteredLinks)
+      .data(links)
       .join('line')
-      .attr('class', 'link')
-      .attr('stroke', '#718096')
-      .attr('stroke-width', (d) => Math.sqrt(d.value) * 2)
-      .attr('stroke-opacity', linkOpacity);
+      .attr('stroke', (d: any) => d.type === 'similar' ? '#fbbf24' : '#fde68a')
+      .attr('stroke-width', (d: any) => d.type === 'similar' ? Math.max(2, d.value) : 1.5)
+      .attr('stroke-opacity', linkOpacity)
+      .attr('stroke-dasharray', (d: any) => d.type === 'similar' ? '6,3' : 'none');
 
     const nodeGroup = g.append('g')
       .selectAll('g')
-      .data(filteredNodes)
+      .data(nodes)
       .join('g')
-      .attr('class', 'node')
       .style('cursor', 'pointer');
 
-    // 为论文节点创建更大的框
-    nodeGroup.filter((d) => d.type === 'paper')
-      .append('rect')
-      .attr('width', (d) => Math.max(120, d.label.length * 8))
-      .attr('height', 60)
-      .attr('x', (d) => -Math.max(60, d.label.length * 4))
-      .attr('y', -30)
-      .attr('rx', 8)
-      .attr('ry', 8)
-      .attr('fill', '#2c5282')
-      .attr('stroke', '#e2e8f0')
-      .attr('stroke-width', 2);
+    nodeGroup.filter((d: any) => d.type === 'paper')
+      .each(function (d: any) {
+        const el = d3.select(this);
+        const fontSize = 14;
+        const fontWeight = 700;
+        const maxTextWidth = 280;
+        const paddingX = 40;
+        const lineHeight = 22;
 
-    // 为关键词节点保持圆形
-    nodeGroup.filter((d) => d.type !== 'paper')
-      .append('circle')
-      .attr('r', (d) => d.size)
-      .attr('fill', (d) => {
-        if (d.type === 'keyword') return '#3182ce';
-        if (d.type === 'author') return '#553c9a';
-        return '#4a5568';
-      })
-      .attr('stroke', '#e2e8f0')
-      .attr('stroke-width', 2);
+        const lines = wrapText(d.label, maxTextWidth, fontSize, fontWeight);
+        const maxLineWidth = Math.min(maxTextWidth, Math.max(...lines.map(l => measureTextWidth(l, fontSize, fontWeight))));
+        const w = maxLineWidth + paddingX * 2;
+        const h = Math.max(60, lines.length * lineHeight + 28);
+        const cornerR = 16;
 
-    // 论文节点的文本
-    nodeGroup.filter((d) => d.type === 'paper')
-      .append('text')
-      .text((d) => d.label)
-      .attr('dy', 5)
-      .attr('text-anchor', 'middle')
-      .attr('fill', '#f7fafc')
-      .attr('font-size', '10px')
-      .attr('font-weight', '600')
-      .attr('textLength', (d) => Math.min(100, d.label.length * 8))
-      .attr('lengthAdjust', 'spacingAndGlyphs');
+        el.append('rect')
+          .attr('width', w)
+          .attr('height', h)
+          .attr('x', -w / 2)
+          .attr('y', -h / 2)
+          .attr('rx', cornerR)
+          .attr('ry', cornerR)
+          .attr('fill', 'url(#paperGradient)')
+          .attr('stroke', '#facc15')
+          .attr('stroke-width', 2)
+          .attr('filter', 'drop-shadow(0 4px 12px rgba(250,204,21,0.25))');
 
-    // 其他节点的文本
-    nodeGroup.filter((d) => d.type !== 'paper')
-      .append('text')
-      .text((d) => d.label)
-      .attr('dy', (d) => d.size + 15)
-      .attr('text-anchor', 'middle')
-      .attr('fill', '#2d3748')
-      .attr('font-size', '11px')
-      .attr('font-weight', '500');
+        const startY = -h / 2 + (h - lines.length * lineHeight) / 2 + fontSize;
+        lines.forEach((line, i) => {
+          el.append('text')
+            .text(line)
+            .attr('y', startY + i * lineHeight)
+            .attr('text-anchor', 'middle')
+            .attr('fill', '#92400e')
+            .attr('font-size', fontSize + 'px')
+            .attr('font-weight', fontWeight)
+            .attr('dominant-baseline', 'auto');
+        });
+      });
 
-    const drag = d3.drag()
+    nodeGroup.filter((d: any) => d.type === 'keyword')
+      .each(function (d: any) {
+        const el = d3.select(this);
+        const kwFontSize = 12;
+        const kwFontWeight = 700;
+        const textW = measureTextWidth(d.label, kwFontSize, kwFontWeight);
+        const circleR = Math.max(d.size, textW / 2 + 8);
+
+        el.append('circle')
+          .attr('r', circleR)
+          .attr('fill', '#fde68a')
+          .attr('stroke', '#fbbf24')
+          .attr('stroke-width', 1.5)
+          .attr('filter', 'drop-shadow(0 2px 6px rgba(251,191,36,0.2))');
+        el.append('circle')
+          .attr('r', circleR + 10)
+          .attr('fill', 'transparent')
+          .attr('stroke', 'none')
+          .attr('class', 'hit-area');
+        el.append('text')
+          .text(d.label)
+          .attr('dy', 4)
+          .attr('text-anchor', 'middle')
+          .attr('fill', '#78350f')
+          .attr('font-size', kwFontSize + 'px')
+          .attr('font-weight', kwFontWeight);
+      });
+
+    nodeGroup.filter((d: any) => d.type === 'related')
+      .each(function (d: any) {
+        const el = d3.select(this);
+        const fontSize = 11;
+        const fontWeight = 500;
+        const maxTextWidth = 160;
+        const paddingX = 28;
+        const lineHeight = 16;
+
+        const lines = wrapText(d.label, maxTextWidth, fontSize, fontWeight);
+        const maxLineWidth = Math.min(maxTextWidth, Math.max(...lines.map(l => measureTextWidth(l, fontSize, fontWeight))));
+        const w = Math.max(80, maxLineWidth + paddingX * 2);
+        const h = Math.max(40, lines.length * lineHeight + 20);
+
+        el.append('rect')
+          .attr('width', w)
+          .attr('height', h)
+          .attr('x', -w / 2)
+          .attr('y', -h / 2)
+          .attr('rx', 10)
+          .attr('ry', 10)
+          .attr('fill', '#fefce8')
+          .attr('stroke', '#fde68a')
+          .attr('stroke-width', 1);
+
+        const startY = -h / 2 + (h - lines.length * lineHeight) / 2 + fontSize;
+        lines.forEach((line, i) => {
+          el.append('text')
+            .text(line)
+            .attr('y', startY + i * lineHeight)
+            .attr('text-anchor', 'middle')
+            .attr('fill', '#92400e')
+            .attr('font-size', fontSize + 'px')
+            .attr('font-weight', fontWeight);
+        });
+      });
+
+    let dragStartPos: { x: number; y: number } | null = null;
+
+    const drag = d3.drag<any, any>()
       .on('start', (event, d) => {
+        dragStartPos = { x: event.x, y: event.y };
         if (!event.active) simulation.alphaTarget(0.3).restart();
         d.fx = d.x;
         d.fy = d.y;
@@ -165,167 +321,128 @@ export const KnowledgeGraph = ({ onNodeClick }: KnowledgeGraphProps) => {
       })
       .on('end', (event, d) => {
         if (!event.active) simulation.alphaTarget(0);
-      });
 
+        const startPos = dragStartPos;
+        dragStartPos = null;
+
+        if (startPos) {
+          const dx = event.x - startPos.x;
+          const dy = event.y - startPos.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < 5) {
+            d.fx = null;
+            d.fy = null;
+            const { onNodeClick, onKeywordClick, paper: currentPaper } = callbacksRef.current;
+            if (d.type === 'keyword' && onKeywordClick && currentPaper) {
+              onKeywordClick(d.label, currentPaper);
+            } else if (onNodeClick) {
+              onNodeClick(d);
+            }
+          }
+        }
+      });
     nodeGroup.call(drag);
 
     nodeGroup
-      .on('mouseover', function(event, d) {
-        const connectedLinks = filteredLinks.filter(l => 
-          (l.source as any).id === d.id || (l.target as any).id === d.id
-        );
-        const connectedNodeIds = new Set([d.id]);
-        connectedLinks.forEach(l => {
-          connectedNodeIds.add((l.source as any).id);
-          connectedNodeIds.add((l.target as any).id);
+      .on('mouseover', function (event: any, d: any) {
+        const connectedIds = new Set([d.id]);
+        links.forEach((l: any) => {
+          const sid = typeof l.source === 'object' ? l.source.id : l.source;
+          const tid = typeof l.target === 'object' ? l.target.id : l.target;
+          if (sid === d.id) connectedIds.add(tid);
+          if (tid === d.id) connectedIds.add(sid);
         });
 
-        link.attr('stroke-opacity', (l) => {
-          const isConnected = (l.source as any).id === d.id || (l.target as any).id === d.id;
-          return isConnected ? 1 : 0.1;
+        link.attr('stroke-opacity', (l: any) => {
+          const sid = typeof l.source === 'object' ? l.source.id : l.source;
+          const tid = typeof l.target === 'object' ? l.target.id : l.target;
+          return (sid === d.id || tid === d.id) ? 0.9 : 0.08;
         });
+        nodeGroup.style('opacity', (n: any) => connectedIds.has(n.id) ? 1 : 0.15);
 
-        nodeGroup.style('opacity', (n) => {
-          return connectedNodeIds.has(n.id) ? 1 : 0.2;
-        });
-
-        if (d.type === 'paper') {
-          d3.select(this).select('rect')
-            .transition()
-            .duration(200)
-            .attr('width', (d) => Math.max(130, d.label.length * 8.5))
-            .attr('height', 65)
-            .attr('x', (d) => -Math.max(65, d.label.length * 4.25))
-            .attr('y', -32.5)
-            .attr('fill', '#1a365d');
-        } else {
-          d3.select(this).select('circle')
-            .transition()
-            .duration(200)
-            .attr('r', (d) => d.size * 1.3);
+        if (d.type === 'keyword') {
+          d3.select(this).select('circle:not(.hit-area)')
+            .transition().duration(150)
+            .attr('fill', '#fbbf24');
         }
       })
-      .on('mouseout', function(event, d) {
+      .on('mouseout', function (event: any, d: any) {
         link.attr('stroke-opacity', linkOpacity);
         nodeGroup.style('opacity', 1);
-        
-        if (d.type === 'paper') {
-          d3.select(this).select('rect')
-            .transition()
-            .duration(200)
-            .attr('width', (d) => Math.max(120, d.label.length * 8))
-            .attr('height', 60)
-            .attr('x', (d) => -Math.max(60, d.label.length * 4))
-            .attr('y', -30)
-            .attr('fill', '#2c5282');
-        } else {
-          d3.select(this).select('circle')
-            .transition()
-            .duration(200)
-            .attr('r', (d) => d.size);
-        }
-      })
-      .on('click', (event, d) => {
-        event.stopPropagation();
-        if (onNodeClick) {
-          onNodeClick(d);
+
+        if (d.type === 'keyword') {
+          d3.select(this).select('circle:not(.hit-area)')
+            .transition().duration(150)
+            .attr('fill', '#fde68a');
         }
       });
 
     simulation.on('tick', () => {
       link
-        .attr('x1', (d) => d.source.x)
-        .attr('y1', (d) => d.source.y)
-        .attr('x2', (d) => d.target.x)
-        .attr('y2', (d) => d.target.y);
-
-      nodeGroup.attr('transform', (d) => `translate(${d.x},${d.y})`);
+        .attr('x1', (d: any) => d.source.x)
+        .attr('y1', (d: any) => d.source.y)
+        .attr('x2', (d: any) => d.target.x)
+        .attr('y2', (d: any) => d.target.y);
+      nodeGroup.attr('transform', (d: any) => `translate(${d.x},${d.y})`);
     });
 
     setIsLoading(false);
-
-  }, [filteredNodes, filteredLinks, dimensions, onNodeClick]);
-
-  const handleResetLayout = () => {
-    // 重置布局，重新触发渲染
-    setFilteredNodes([...filteredNodes]);
-  };
+  }, [paper, graphData, dimensions, papers]);
 
   return (
     <div className="w-full space-y-4">
-      {/* 控制栏 */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center space-x-2">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="搜索节点..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400">
-              🔍
-            </div>
-          </div>
-          <button
-            onClick={handleResetLayout}
-            className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"
-          >
-            重置布局
-          </button>
           <button
             onClick={() => setShowLegend(!showLegend)}
-            className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"
+            className="px-3 py-1.5 text-sm bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"
           >
             {showLegend ? '隐藏图例' : '显示图例'}
           </button>
         </div>
-        <div className="text-sm text-slate-500">
-          节点: {filteredNodes.length} | 连接: {filteredLinks.length}
-        </div>
       </div>
 
-      {/* 图例 */}
       {showLegend && (
-        <div className="flex flex-wrap items-center gap-6 p-4 bg-white rounded-xl border border-slate-200">
+        <div className="flex flex-wrap items-center gap-6 p-3 bg-white/80 backdrop-blur rounded-xl border border-slate-200 text-sm">
           <div className="flex items-center space-x-2">
-            <div className="w-4 h-4 rounded bg-blue-900 border-2 border-slate-200"></div>
-            <span className="text-sm text-slate-700">论文节点</span>
+            <div className="w-4 h-4 rounded bg-gradient-to-br from-yellow-100 to-yellow-300 border border-yellow-300"></div>
+            <span className="text-slate-700">当前论文</span>
           </div>
           <div className="flex items-center space-x-2">
-            <div className="w-4 h-4 rounded-full bg-blue-600 border-2 border-slate-200"></div>
-            <span className="text-sm text-slate-700">关键词节点</span>
+            <div className="w-4 h-4 rounded-full bg-yellow-200 border border-yellow-300"></div>
+            <span className="text-slate-700">关键词（点击查看段落）</span>
           </div>
           <div className="flex items-center space-x-2">
-            <div className="w-4 h-4 rounded-full bg-purple-800 border-2 border-slate-200"></div>
-            <span className="text-sm text-slate-700">作者节点</span>
+            <div className="w-4 h-3 rounded bg-yellow-50 border border-yellow-300"></div>
+            <span className="text-slate-700">关联论文</span>
           </div>
           <div className="flex items-center space-x-2">
-            <div className="w-6 h-1 bg-slate-500"></div>
-            <span className="text-sm text-slate-700">关联关系</span>
+            <div className="w-5 h-0 border-t-2 border-dashed border-yellow-400"></div>
+            <span className="text-slate-700">相似关系</span>
           </div>
           <div className="flex items-center space-x-2">
-            <div className="text-sm text-slate-700">
-              💡 提示: 拖拽节点可调整位置，滚轮可缩放视图
-            </div>
+            <div className="w-5 h-0 border-t-2 border-yellow-200"></div>
+            <span className="text-slate-700">关键词关联</span>
           </div>
         </div>
       )}
 
-      {/* 知识图谱 */}
-      <div ref={containerRef} className="w-full h-[600px] bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-200 overflow-hidden relative">
+      <div
+        ref={containerRef}
+        className="w-full h-[550px] bg-gradient-to-br from-yellow-50/50 via-white to-amber-50/20 rounded-2xl border border-slate-200 overflow-hidden relative"
+      >
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-10">
+          <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-sm z-10">
             <div className="flex flex-col items-center space-y-2">
-              <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-              <p className="text-slate-600">正在渲染知识图谱...</p>
+              <div className="w-10 h-10 border-4 border-yellow-200 border-t-yellow-400 rounded-full animate-spin"></div>
+              <p className="text-slate-600 text-sm">渲染知识图谱...</p>
             </div>
           </div>
         )}
-        {filteredNodes.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-slate-500">
-            <p>{searchTerm ? '没有找到匹配的节点' : '暂无数据，请先添加论文'}</p>
+        {(!paper && graphData.nodes.length === 0) ? (
+          <div className="flex items-center justify-center h-full text-slate-400">
+            <p>暂无数据，请先添加论文</p>
           </div>
         ) : (
           <svg

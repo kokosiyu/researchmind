@@ -80,6 +80,13 @@ export const noteApi = {
   // 删除笔记
   delete: async (id: string): Promise<void> => {
     await api.delete(`/notes/${id}`);
+  },
+  // 上传笔记图片
+  uploadImage: async (file: File): Promise<{ url: string; filename: string }> => {
+    const formData = new FormData();
+    formData.append('image', file);
+    const response = await apiFile.post('/notes/upload-image', formData);
+    return response.data;
   }
 };
 

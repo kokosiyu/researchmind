@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { BarChart3, FileText, Users, TrendingUp, Search, Download, Plus, Calendar, Tag, ChevronRight } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import ParticleAnimation from '../components/features/ParticleAnimation';
 
 export default function Dashboard() {
   const { papers, notes, loadPapers, loadNotes } = useAppStore();
+  const navigate = useNavigate();
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -14,7 +16,6 @@ export default function Dashboard() {
     loadNotes();
   }, [loadPapers, loadNotes]);
 
-  // 统计数据
   const totalPapers = papers.length;
   const totalNotes = notes.length;
   const recentPapers = papers.slice(0, 5);
@@ -25,7 +26,28 @@ export default function Dashboard() {
     return acc;
   }, {} as Record<number, number>);
 
-  // 过滤论文
+  const now = new Date();
+  const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+  const thisMonthPapers = papers.filter(p => new Date(p.createdAt) >= startOfThisMonth).length;
+  const lastMonthPapers = papers.filter(p => {
+    const d = new Date(p.createdAt);
+    return d >= startOfLastMonth && d < startOfThisMonth;
+  }).length;
+  const paperGrowth = lastMonthPapers > 0
+    ? Math.round(((thisMonthPapers - lastMonthPapers) / lastMonthPapers) * 100)
+    : thisMonthPapers > 0 ? 100 : 0;
+
+  const thisMonthNotes = notes.filter(n => new Date(n.createdAt) >= startOfThisMonth).length;
+  const lastMonthNotes = notes.filter(n => {
+    const d = new Date(n.createdAt);
+    return d >= startOfLastMonth && d < startOfThisMonth;
+  }).length;
+  const noteGrowth = lastMonthNotes > 0
+    ? Math.round(((thisMonthNotes - lastMonthNotes) / lastMonthNotes) * 100)
+    : thisMonthNotes > 0 ? 100 : 0;
+
   const filteredPapers = papers.filter(paper => {
     if (selectedCategory !== 'all' && paper.year?.toString() !== selectedCategory) {
       return false;
@@ -41,11 +63,10 @@ export default function Dashboard() {
     return true;
   });
 
-  // 获取所有年份
   const years = Array.from(new Set(papers.filter(p => p.year).map(p => p.year))).sort((a, b) => b - a);
 
   return (
-    <div className="min-h-screen relative overflow-hidden">
+    <div className="min-h-screen relative overflow-hidden bg-white">
       <ParticleAnimation />
       
       <div className="relative z-10 pt-24 pb-16">
@@ -55,31 +76,30 @@ export default function Dashboard() {
             animate={{ opacity: 1, y: 0 }}
             className="mb-8"
           >
-            <h1 className="text-4xl font-bold text-blue-300 mb-2 flex items-center space-x-3">
-              <BarChart3 className="w-10 h-10 text-blue-400" />
+            <h1 className="text-4xl font-bold text-slate-900 mb-2 flex items-center space-x-3">
+              <BarChart3 className="w-10 h-10 text-blue-500" />
               <span>智慧文档管理大屏</span>
             </h1>
-            <p className="text-lg text-blue-300 font-medium">
+            <p className="text-lg text-slate-500">
               实时监控和管理您的学术文献库
             </p>
           </motion.div>
 
-          {/* 统计卡片 */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="bg-gradient-to-br from-blue-900/80 to-blue-800/80 backdrop-blur-lg rounded-2xl border border-blue-700/50 p-6 shadow-lg"
+              className="bg-gradient-to-br from-blue-50 to-blue-100/60 rounded-2xl border border-blue-200 p-6 shadow-sm"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-blue-200">总论文数</h3>
-                <FileText className="w-6 h-6 text-blue-400" />
+                <h3 className="text-lg font-semibold text-blue-700">总论文数</h3>
+                <FileText className="w-6 h-6 text-blue-500" />
               </div>
-              <p className="text-3xl font-bold text-white">{totalPapers}</p>
-              <div className="mt-2 flex items-center text-green-400 text-sm">
-                <TrendingUp className="w-4 h-4 mr-1" />
-                <span>较上月增长 12%</span>
+              <p className="text-3xl font-bold text-blue-900">{totalPapers}</p>
+              <div className={`mt-2 flex items-center text-sm ${paperGrowth >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                <TrendingUp className={`w-4 h-4 mr-1 ${paperGrowth < 0 ? 'rotate-180' : ''}`} />
+                <span>较上月{paperGrowth >= 0 ? '增长' : '下降'} {Math.abs(paperGrowth)}%</span>
               </div>
             </motion.div>
 
@@ -87,16 +107,16 @@ export default function Dashboard() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="bg-gradient-to-br from-purple-900/80 to-purple-800/80 backdrop-blur-lg rounded-2xl border border-purple-700/50 p-6 shadow-lg"
+              className="bg-gradient-to-br from-sky-50 to-sky-100/60 rounded-2xl border border-sky-200 p-6 shadow-sm"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-purple-200">总笔记数</h3>
-                <Users className="w-6 h-6 text-purple-400" />
+                <h3 className="text-lg font-semibold text-sky-700">总笔记数</h3>
+                <Users className="w-6 h-6 text-sky-500" />
               </div>
-              <p className="text-3xl font-bold text-white">{totalNotes}</p>
-              <div className="mt-2 flex items-center text-green-400 text-sm">
-                <TrendingUp className="w-4 h-4 mr-1" />
-                <span>较上月增长 8%</span>
+              <p className="text-3xl font-bold text-sky-900">{totalNotes}</p>
+              <div className={`mt-2 flex items-center text-sm ${noteGrowth >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                <TrendingUp className={`w-4 h-4 mr-1 ${noteGrowth < 0 ? 'rotate-180' : ''}`} />
+                <span>较上月{noteGrowth >= 0 ? '增长' : '下降'} {Math.abs(noteGrowth)}%</span>
               </div>
             </motion.div>
 
@@ -104,14 +124,14 @@ export default function Dashboard() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
-              className="bg-gradient-to-br from-green-900/80 to-green-800/80 backdrop-blur-lg rounded-2xl border border-green-700/50 p-6 shadow-lg"
+              className="bg-gradient-to-br from-cyan-50 to-cyan-100/60 rounded-2xl border border-cyan-200 p-6 shadow-sm"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-green-200">论文年份分布</h3>
-                <Calendar className="w-6 h-6 text-green-400" />
+                <h3 className="text-lg font-semibold text-cyan-700">论文年份分布</h3>
+                <Calendar className="w-6 h-6 text-cyan-500" />
               </div>
-              <p className="text-3xl font-bold text-white">{years.length}</p>
-              <div className="mt-2 text-green-200 text-sm">
+              <p className="text-3xl font-bold text-cyan-900">{years.length}</p>
+              <div className="mt-2 text-cyan-600 text-sm">
                 <span>涵盖 {Math.min(...years)}-{Math.max(...years)} 年</span>
               </div>
             </motion.div>
@@ -120,27 +140,26 @@ export default function Dashboard() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
-              className="bg-gradient-to-br from-orange-900/80 to-orange-800/80 backdrop-blur-lg rounded-2xl border border-orange-700/50 p-6 shadow-lg"
+              className="bg-gradient-to-br from-indigo-50 to-indigo-100/60 rounded-2xl border border-indigo-200 p-6 shadow-sm"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-orange-200">关键词数量</h3>
-                <Tag className="w-6 h-6 text-orange-400" />
+                <h3 className="text-lg font-semibold text-indigo-700">关键词数量</h3>
+                <Tag className="w-6 h-6 text-indigo-500" />
               </div>
-              <p className="text-3xl font-bold text-white">
+              <p className="text-3xl font-bold text-indigo-900">
                 {Array.from(new Set(papers.flatMap(p => p.keywords || []))).length}
               </p>
-              <div className="mt-2 text-orange-200 text-sm">
+              <div className="mt-2 text-indigo-600 text-sm">
                 <span>来自 {totalPapers} 篇论文</span>
               </div>
             </motion.div>
           </div>
 
-          {/* 搜索和筛选 */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5 }}
-            className="bg-gradient-to-br from-slate-900/80 to-slate-800/80 backdrop-blur-lg rounded-2xl border border-slate-700/50 p-6 shadow-lg mb-8"
+            className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm mb-8"
           >
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1">
@@ -151,14 +170,14 @@ export default function Dashboard() {
                     placeholder="搜索论文标题、作者或关键词..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700 text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-blue-400 focus:border-transparent"
                   />
                 </div>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => setSelectedCategory('all')}
-                  className={`px-4 py-3 rounded-xl transition-colors ${selectedCategory === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-800/50 border border-slate-700 text-slate-300 hover:bg-slate-700/50'}`}
+                  className={`px-4 py-3 rounded-xl transition-colors ${selectedCategory === 'all' ? 'bg-blue-500 text-white' : 'bg-slate-50 border border-slate-200 text-slate-600 hover:bg-blue-50'}`}
                 >
                   全部
                 </button>
@@ -166,7 +185,7 @@ export default function Dashboard() {
                   <button
                     key={year}
                     onClick={() => setSelectedCategory(year.toString())}
-                    className={`px-4 py-3 rounded-xl transition-colors ${selectedCategory === year.toString() ? 'bg-blue-600 text-white' : 'bg-slate-800/50 border border-slate-700 text-slate-300 hover:bg-slate-700/50'}`}
+                    className={`px-4 py-3 rounded-xl transition-colors ${selectedCategory === year.toString() ? 'bg-blue-500 text-white' : 'bg-slate-50 border border-slate-200 text-slate-600 hover:bg-blue-50'}`}
                   >
                     {year}
                   </button>
@@ -175,19 +194,21 @@ export default function Dashboard() {
             </div>
           </motion.div>
 
-          {/* 论文列表 */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.6 }}
-            className="bg-gradient-to-br from-slate-900/80 to-slate-800/80 backdrop-blur-lg rounded-2xl border border-slate-700/50 p-6 shadow-lg"
+            className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm"
           >
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-white flex items-center space-x-2">
-                <FileText className="w-5 h-5 text-blue-400" />
+              <h2 className="text-xl font-bold text-slate-900 flex items-center space-x-2">
+                <FileText className="w-5 h-5 text-blue-500" />
                 <span>文档列表 ({filteredPapers.length})</span>
               </h2>
-              <button className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              <button
+                onClick={() => navigate('/analyze')}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
                 <Plus className="w-4 h-4" />
                 <span>添加文档</span>
               </button>
@@ -201,29 +222,42 @@ export default function Dashboard() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.1 * index }}
-                    className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 hover:border-blue-500 transition-colors w-80"
+                    className="bg-slate-50 border border-slate-200 rounded-xl p-4 hover:border-blue-400 hover:shadow-md transition-all w-80"
                   >
                     <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-white mb-1 line-clamp-2">{paper.title}</h3>
-                      <p className="text-sm text-slate-400 mb-3">{paper.authors} · {paper.year}</p>
+                      <h3 className="text-lg font-semibold text-slate-900 mb-1 line-clamp-2">{paper.title}</h3>
+                      <p className="text-sm text-slate-500 mb-3">{paper.authors} · {paper.year}</p>
                       <div className="flex flex-wrap gap-2 mb-3">
                         {paper.keywords && Array.isArray(paper.keywords) && paper.keywords.slice(0, 3).map((keyword, idx) => (
                           <span
                             key={idx}
-                            className="px-2 py-1 bg-blue-900/50 text-blue-300 text-xs rounded-full"
+                            className="px-2 py-1 bg-blue-50 text-blue-600 text-xs rounded-full"
                           >
                             {keyword}
                           </span>
                         ))}
                       </div>
                       <div className="flex items-center justify-between mt-4">
-                        <span className="text-xs text-slate-500">{paper.fileName || '无文件'}</span>
+                        <span className="text-xs text-slate-400">{paper.fileName || '无文件'}</span>
                         <div className="flex space-x-2">
-                          <button className="p-1.5 bg-slate-700/50 rounded-lg hover:bg-slate-600 transition-colors text-slate-300">
+                          <button
+                            onClick={() => navigate('/search')}
+                            className="p-1.5 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors text-blue-500"
+                          >
                             <Search className="w-4 h-4" />
                           </button>
                           {paper.filePath && (
-                            <button className="p-1.5 bg-slate-700/50 rounded-lg hover:bg-slate-600 transition-colors text-slate-300">
+                            <button
+                              onClick={() => {
+                                const a = document.createElement('a');
+                                a.href = `/uploads/${paper.filePath}`;
+                                a.download = paper.fileName || 'paper';
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                              }}
+                              className="p-1.5 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors text-blue-500"
+                            >
                               <Download className="w-4 h-4" />
                             </button>
                           )}
@@ -243,7 +277,10 @@ export default function Dashboard() {
 
             {filteredPapers.length > 6 && (
               <div className="mt-6 flex justify-center">
-                <button className="flex items-center space-x-2 text-blue-400 hover:text-blue-300 transition-colors">
+                <button
+                  onClick={() => navigate('/search')}
+                  className="flex items-center space-x-2 text-blue-500 hover:text-blue-600 transition-colors"
+                >
                   <span>查看更多</span>
                   <ChevronRight className="w-4 h-4" />
                 </button>

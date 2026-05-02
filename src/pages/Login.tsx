@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
+import ParticleAnimation from '../components/features/ParticleAnimation';
 
 const Login: React.FC = () => {
   const [username, setUsername] = useState('');
@@ -26,8 +27,9 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sky-300 via-blue-200 to-white py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-xl shadow-2xl">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-200 via-yellow-100 to-orange-50 py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+      <ParticleAnimation theme="warm" />
+      <div className="max-w-md w-full space-y-8 bg-white/80 backdrop-blur-sm p-10 rounded-xl shadow-2xl relative z-10">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
             登录您的账户
