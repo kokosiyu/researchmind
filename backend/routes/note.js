@@ -2,10 +2,12 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 
 const router = express.Router();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const noteImagesDir = path.join(process.cwd(), 'uploads', 'note-images');
+const noteImagesDir = path.join(__dirname, '..', 'uploads', 'note-images');
 fs.mkdirSync(noteImagesDir, { recursive: true });
 
 const imageStorage = multer.diskStorage({

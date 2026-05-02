@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
     "dev:backend": "node --experimental-modules backend/server.js",
+    "render-build": "npm install && npm run build && cd backend && npm install && cp -r ../dist/* public/",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
   },

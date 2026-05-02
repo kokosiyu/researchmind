@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: researchmind
+    runtime: node
+    buildCommand: npm run render-build
+    startCommand: cd backend && node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_URL
+        sync: false
+      - key: DEEPSEEK_MODEL
+        sync: false

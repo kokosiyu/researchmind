@@ -33,8 +33,9 @@ app.use((req, res, next) => {
 
 // 连接数据库
 async function initDatabase() {
+  const dbPath = path.join(__dirname, 'researchmind.db');
   const db = await open({
-    filename: './researchmind.db',
+    filename: dbPath,
     driver: sqlite3.Database
   });
 
@@ -104,7 +105,7 @@ app.get('/health', (req, res) => {
 });
 
 // 静态文件服务，用于下载上传的文件
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // 路由
 app.use('/api/papers', (req, res, next) => {
