@@ -169,7 +169,13 @@ app.use((err, req, res, next) => {
 
 // 处理前端路由，所有未匹配的路由都返回index.html
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  // Vercel 部署时，前端构建产物在根目录的 dist 目录
+  // 本地开发时，前端构建产物在 backend/public 目录
+  const isVercel = process.env.VERCEL === '1';
+  const indexPath = isVercel 
+    ? path.join(__dirname, '..', 'dist', 'index.html')
+    : path.join(__dirname, 'public', 'index.html');
+  res.sendFile(indexPath);
 });
 
 const server = app.listen(PORT, () => {

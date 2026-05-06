@@ -1,23 +1,16 @@
 {
   "version": 3,
   "buildCommand": "npm run build",
-  "outputDirectory": "dist",
   "functions": {
     "backend/server.js": {
-      "runtime": "@vercel/node@3"
+      "runtime": "@vercel/node@3",
+      "includeFiles": ["dist/**"]
     }
   },
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "backend/server.js"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
       "src": "/(.*)",
-      "dest": "/index.html"
+      "dest": "backend/server.js"
     }
   ]
 }
