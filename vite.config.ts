@@ -2,6 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tsconfigPaths from "vite-tsconfig-paths";
 
+const backendPort = process.env.BACKEND_PORT || '5000';
+const backendTarget = `http://localhost:${backendPort}`;
+
 // https://vite.dev/config/
 export default defineConfig({
   build: {
@@ -20,13 +23,13 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: backendTarget,
         changeOrigin: true,
         secure: false,
-        timeout: 600000 // 10分钟超时
+        timeout: 600000
       },
       '/uploads': {
-        target: 'http://localhost:5000',
+        target: backendTarget,
         changeOrigin: true,
         secure: false
       }

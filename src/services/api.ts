@@ -13,12 +13,38 @@ const api = axios.create({
 // 用于文件上传的 axios 实例，不设置默认 Content-Type
 const apiFile = axios.create({
   baseURL: API_URL,
-  timeout: 600000, // 增加到600秒（10分钟），适应DeepSeek API处理长文本
+  timeout: 600000,
   headers: {
     'Connection': 'keep-alive',
     'Keep-Alive': 'timeout=600'
   },
-  // 不设置Content-Type，让axios自动处理multipart/form-data
+});
+
+function getToken(): string | null {
+  try {
+    const raw = localStorage.getItem('research-platform-storage');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return parsed?.state?.token || null;
+    }
+  } catch (e) {}
+  return null;
+}
+
+api.interceptors.request.use((config) => {
+  const token = getToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+apiFile.interceptors.request.use((config) => {
+  const token = getToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 export const paperApi = {
@@ -150,6 +176,62 @@ export const authApi = {
     });
     return response.data;
   }
+};
+
+export const assistantApi = {
+  sendMessage: async (
+    message: string,
+    context?: { role: string; content: string; image?: string }[],
+    image?: string
+  ): Promise<Response> => {
+    const token = getToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const response = await fetch(`${API_URL}/assistant/chat`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ message, context, image }),
+    });
+    return response;
+  },
+};
+
+export const similarityApi = {
+  compare: async (textA: string, textB: string) => {
+    const response = await api.post('/similarity/compare', { textA, textB });
+    return response.data;
+  },
+  check: async (text: string, papers: { id: string; title: string; content?: string; abstract?: string }[]) => {
+    const response = await api.post('/similarity/check', { text, papers });
+    return response.data;
+  },
+  extractKeywords: async (text: string, topN?: number) => {
+    const response = await api.post('/similarity/keywords', { text, topN });
+    return response.data;
+  },
+};
+
+export const trendsApi = {
+  getOverview: async () => {
+    const response = await api.get('/trends/overview');
+    return response.data;
+  },
+  getTimeline: async () => {
+    const response = await api.get('/trends/timeline');
+    return response.data;
+  },
+  getClusters: async (k?: number) => {
+    const response = await api.get('/trends/clusters', { params: { k } });
+    return response.data;
+  },
+  getNetwork: async () => {
+    const response = await api.get('/trends/network');
+    return response.data;
+  },
 };
 
 export default api;

@@ -249,8 +249,14 @@ export const useAppStore = create<AppState>()(
         set({
           user: response.user,
           token: response.token,
-          isAuthenticated: true
+          isAuthenticated: true,
+          papers: [],
+          notes: [],
+          currentPaper: null,
+          graphData: { nodes: [], links: [] }
         });
+        await get().loadPapers();
+        await get().loadNotes();
       },
 
       register: async (username, email, password) => {
@@ -258,7 +264,11 @@ export const useAppStore = create<AppState>()(
         set({
           user: response.user,
           token: response.token,
-          isAuthenticated: true
+          isAuthenticated: true,
+          papers: [],
+          notes: [],
+          currentPaper: null,
+          graphData: { nodes: [], links: [] }
         });
       },
 
@@ -266,7 +276,11 @@ export const useAppStore = create<AppState>()(
         set({
           user: null,
           token: null,
-          isAuthenticated: false
+          isAuthenticated: false,
+          papers: [],
+          notes: [],
+          currentPaper: null,
+          graphData: { nodes: [], links: [] }
         });
       },
 

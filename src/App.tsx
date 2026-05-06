@@ -9,8 +9,11 @@ import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Profile from "./pages/Profile";
+import Similarity from "./pages/Similarity";
+import Trends from "./pages/Trends";
 import { Header } from "./components/layout/Header";
 import { Footer } from "./components/layout/Footer";
+import { AIAssistant } from "./components/features/AIAssistant";
 import { useAppStore } from "./store/useAppStore";
 
 export default function App() {
@@ -38,12 +41,15 @@ export default function App() {
             <Route path="/graph" element={<Graph />} />
             <Route path="/workbench" element={<Workbench />} />
             <Route path="/search" element={<SearchPage />} />
+            <Route path="/similarity" element={<Similarity />} />
+            <Route path="/trends" element={<Trends />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/profile" element={<Profile />} />
           </Routes>
         </main>
         <Footer />
+        <AIAssistant />
       </div>
     </Router>
   );

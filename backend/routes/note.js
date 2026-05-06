@@ -3,9 +3,24 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { authService } from '../services/authService.js';
 
 const router = express.Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function authenticate(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: '未提供认证令牌' });
+  }
+  const token = authHeader.substring(7);
+  const userInfo = authService.extractUserFromToken(token);
+  if (!userInfo) {
+    return res.status(401).json({ message: '无效的认证令牌' });
+  }
+  req.user = userInfo;
+  next();
+}
 
 const noteImagesDir = path.join(__dirname, '..', 'uploads', 'note-images');
 fs.mkdirSync(noteImagesDir, { recursive: true });
@@ -47,11 +62,10 @@ router.post('/upload-image', (req, res) => {
   });
 });
 
-// 获取所有笔记
-router.get('/', async (req, res) => {
+// 获取当前用户的笔记
+router.get('/', authenticate, async (req, res) => {
   try {
-    const notes = await req.db.all('SELECT * FROM notes');
-    // 解析tags字段
+    const notes = await req.db.all('SELECT * FROM notes WHERE userId = ?', [req.user.id]);
     const parsedNotes = notes.map(note => ({
       ...note,
       tags: note.tags ? JSON.parse(note.tags) : []
@@ -63,10 +77,9 @@ router.get('/', async (req, res) => {
 });
 
 // 根据论文ID获取笔记
-router.get('/paper/:paperId', async (req, res) => {
+router.get('/paper/:paperId', authenticate, async (req, res) => {
   try {
-    const notes = await req.db.all('SELECT * FROM notes WHERE paperId = ?', [req.params.paperId]);
-    // 解析tags字段
+    const notes = await req.db.all('SELECT * FROM notes WHERE paperId = ? AND userId = ?', [req.params.paperId, req.user.id]);
     const parsedNotes = notes.map(note => ({
       ...note,
       tags: note.tags ? JSON.parse(note.tags) : []
@@ -78,13 +91,12 @@ router.get('/paper/:paperId', async (req, res) => {
 });
 
 // 获取单个笔记
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticate, async (req, res) => {
   try {
-    const note = await req.db.get('SELECT * FROM notes WHERE id = ?', [req.params.id]);
+    const note = await req.db.get('SELECT * FROM notes WHERE id = ? AND userId = ?', [req.params.id, req.user.id]);
     if (!note) {
       return res.status(404).json({ message: '笔记不存在' });
     }
-    // 解析tags字段
     note.tags = note.tags ? JSON.parse(note.tags) : [];
     res.json(note);
   } catch (err) {
@@ -93,14 +105,14 @@ router.get('/:id', async (req, res) => {
 });
 
 // 创建新笔记
-router.post('/', async (req, res) => {
+router.post('/', authenticate, async (req, res) => {
   const { paperId, content, tags } = req.body;
   
   try {
     const result = await req.db.run(
-      `INSERT INTO notes (paperId, content, tags)
-       VALUES (?, ?, ?)`,
-      [paperId, content, JSON.stringify(tags)]
+      `INSERT INTO notes (userId, paperId, content, tags)
+       VALUES (?, ?, ?, ?)`,
+      [req.user.id, paperId, content, JSON.stringify(tags)]
     );
     
     const newNote = await req.db.get('SELECT * FROM notes WHERE id = ?', [result.lastID]);
@@ -112,9 +124,9 @@ router.post('/', async (req, res) => {
 });
 
 // 更新笔记
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticate, async (req, res) => {
   try {
-    const note = await req.db.get('SELECT * FROM notes WHERE id = ?', [req.params.id]);
+    const note = await req.db.get('SELECT * FROM notes WHERE id = ? AND userId = ?', [req.params.id, req.user.id]);
     if (!note) {
       return res.status(404).json({ message: '笔记不存在' });
     }
@@ -124,8 +136,8 @@ router.put('/:id', async (req, res) => {
     await req.db.run(
       `UPDATE notes SET 
        paperId = ?, content = ?, tags = ?, updatedAt = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [paperId, content, JSON.stringify(tags), req.params.id]
+       WHERE id = ? AND userId = ?`,
+      [paperId, content, JSON.stringify(tags), req.params.id, req.user.id]
     );
     
     const updatedNote = await req.db.get('SELECT * FROM notes WHERE id = ?', [req.params.id]);
@@ -137,9 +149,9 @@ router.put('/:id', async (req, res) => {
 });
 
 // 删除笔记
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticate, async (req, res) => {
   try {
-    const note = await req.db.get('SELECT * FROM notes WHERE id = ?', [req.params.id]);
+    const note = await req.db.get('SELECT * FROM notes WHERE id = ? AND userId = ?', [req.params.id, req.user.id]);
     if (!note) {
       return res.status(404).json({ message: '笔记不存在' });
     }

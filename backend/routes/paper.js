@@ -1,12 +1,26 @@
 import express from 'express';
+import { authService } from '../services/authService.js';
 
 const router = express.Router();
 
-// 获取所有论文
-router.get('/', async (req, res) => {
+function authenticate(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: '未提供认证令牌' });
+  }
+  const token = authHeader.substring(7);
+  const userInfo = authService.extractUserFromToken(token);
+  if (!userInfo) {
+    return res.status(401).json({ message: '无效的认证令牌' });
+  }
+  req.user = userInfo;
+  next();
+}
+
+// 获取当前用户的论文
+router.get('/', authenticate, async (req, res) => {
   try {
-    const papers = await req.db.all('SELECT * FROM papers');
-    // 解析keywords字段
+    const papers = await req.db.all('SELECT * FROM papers WHERE userId = ?', [req.user.id]);
     const parsedPapers = papers.map(paper => ({
       ...paper,
       keywords: paper.keywords ? JSON.parse(paper.keywords) : []
@@ -18,13 +32,12 @@ router.get('/', async (req, res) => {
 });
 
 // 获取单个论文
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticate, async (req, res) => {
   try {
-    const paper = await req.db.get('SELECT * FROM papers WHERE id = ?', [req.params.id]);
+    const paper = await req.db.get('SELECT * FROM papers WHERE id = ? AND userId = ?', [req.params.id, req.user.id]);
     if (!paper) {
       return res.status(404).json({ message: '论文不存在' });
     }
-    // 解析keywords字段
     paper.keywords = paper.keywords ? JSON.parse(paper.keywords) : [];
     res.json(paper);
   } catch (err) {
@@ -33,14 +46,14 @@ router.get('/:id', async (req, res) => {
 });
 
 // 创建新论文
-router.post('/', async (req, res) => {
+router.post('/', authenticate, async (req, res) => {
   const { title, authors, abstract, journal, year, doi, keywords, content, fileName, filePath, summary } = req.body;
   
   try {
     const result = await req.db.run(
-      `INSERT INTO papers (title, authors, abstract, journal, year, doi, keywords, content, fileName, filePath, summary)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [title, authors, abstract, journal, year, doi, JSON.stringify(keywords), content, fileName, filePath, summary]
+      `INSERT INTO papers (userId, title, authors, abstract, journal, year, doi, keywords, content, fileName, filePath, summary)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [req.user.id, title, authors, abstract, journal, year, doi, JSON.stringify(keywords), content, fileName, filePath, summary]
     );
     
     const newPaper = await req.db.get('SELECT * FROM papers WHERE id = ?', [result.lastID]);
@@ -51,21 +64,43 @@ router.post('/', async (req, res) => {
   }
 });
 
-// 更新论文
-router.put('/:id', async (req, res) => {
+// 更新论文（支持部分更新）
+router.put('/:id', authenticate, async (req, res) => {
   try {
-    const paper = await req.db.get('SELECT * FROM papers WHERE id = ?', [req.params.id]);
+    const paper = await req.db.get('SELECT * FROM papers WHERE id = ? AND userId = ?', [req.params.id, req.user.id]);
     if (!paper) {
       return res.status(404).json({ message: '论文不存在' });
     }
 
     const { title, authors, abstract, journal, year, doi, keywords, content, fileName, filePath, summary } = req.body;
     
+    // 构建更新语句，只更新提供的字段
+    const updateFields = [];
+    const updateValues = [];
+    
+    if (title !== undefined) { updateFields.push('title = ?'); updateValues.push(title); }
+    if (authors !== undefined) { updateFields.push('authors = ?'); updateValues.push(authors); }
+    if (abstract !== undefined) { updateFields.push('abstract = ?'); updateValues.push(abstract); }
+    if (journal !== undefined) { updateFields.push('journal = ?'); updateValues.push(journal); }
+    if (year !== undefined) { updateFields.push('year = ?'); updateValues.push(year); }
+    if (doi !== undefined) { updateFields.push('doi = ?'); updateValues.push(doi); }
+    if (keywords !== undefined) { updateFields.push('keywords = ?'); updateValues.push(JSON.stringify(keywords)); }
+    if (content !== undefined) { updateFields.push('content = ?'); updateValues.push(content); }
+    if (fileName !== undefined) { updateFields.push('fileName = ?'); updateValues.push(fileName); }
+    if (filePath !== undefined) { updateFields.push('filePath = ?'); updateValues.push(filePath); }
+    if (summary !== undefined) { updateFields.push('summary = ?'); updateValues.push(summary); }
+    
+    if (updateFields.length === 0) {
+      return res.status(400).json({ message: '至少需要提供一个更新字段' });
+    }
+    
+    updateFields.push('updatedAt = CURRENT_TIMESTAMP');
+    updateValues.push(req.params.id);
+    updateValues.push(req.user.id);
+    
     await req.db.run(
-      `UPDATE papers SET 
-       title = ?, authors = ?, abstract = ?, journal = ?, year = ?, doi = ?, keywords = ?, content = ?, fileName = ?, filePath = ?, summary = ?, updatedAt = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [title, authors, abstract, journal, year, doi, JSON.stringify(keywords), content, fileName, filePath, summary, req.params.id]
+      `UPDATE papers SET ${updateFields.join(', ')} WHERE id = ? AND userId = ?`,
+      updateValues
     );
     
     const updatedPaper = await req.db.get('SELECT * FROM papers WHERE id = ?', [req.params.id]);
@@ -77,9 +112,9 @@ router.put('/:id', async (req, res) => {
 });
 
 // 删除论文
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticate, async (req, res) => {
   try {
-    const paper = await req.db.get('SELECT * FROM papers WHERE id = ?', [req.params.id]);
+    const paper = await req.db.get('SELECT * FROM papers WHERE id = ? AND userId = ?', [req.params.id, req.user.id]);
     if (!paper) {
       return res.status(404).json({ message: '论文不存在' });
     }

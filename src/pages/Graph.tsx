@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Network, BookOpen, FileText, ChevronRight, X, Search, ChevronDown, ChevronUp, Highlighter, BookMarked, ExternalLink, Users, Calendar, Building2 } from 'lucide-react';
 import { KnowledgeGraph } from '../components/features/KnowledgeGraph';
@@ -261,6 +261,39 @@ export default function Graph() {
     });
   };
 
+  const rightNavItems = [
+    { id: 'graph-paper-info', label: '论文信息', icon: BookOpen, show: true },
+    { id: 'graph-knowledge', label: '知识图谱', icon: Network, show: true },
+    { id: 'graph-keyword', label: '关键词', icon: Search, show: !!keywordPanel },
+    { id: 'graph-related', label: '关联论文', icon: ExternalLink, show: !!relatedPaperPanel },
+    { id: 'graph-detail', label: '论文详情', icon: FileText, show: !!paperDetailPanel },
+  ].filter(item => item.show);
+
+  const [activeNav, setActiveNav] = useState('');
+
+  useEffect(() => {
+    if (!selectedPaper) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setActiveNav(entry.target.id);
+          }
+        }
+      },
+      { rootMargin: '-20% 0px -60% 0px' }
+    );
+    rightNavItems.forEach(item => {
+      const el = document.getElementById(item.id);
+      if (el) observer.observe(el);
+    });
+    return () => observer.disconnect();
+  }, [selectedPaper, keywordPanel, relatedPaperPanel, paperDetailPanel]);
+
+  const scrollTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   const toggleExpand = (idx: number) => {
     if (!keywordPanel) return;
     setKeywordPanel({
@@ -297,12 +330,12 @@ export default function Graph() {
           </div>
         </motion.div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
+        <div className="grid lg:grid-cols-12 gap-6">
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.1 }}
-            className="lg:col-span-1 space-y-3"
+            className="lg:col-span-4 space-y-3"
           >
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
@@ -378,11 +411,37 @@ export default function Graph() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2 }}
-            className="lg:col-span-2 space-y-4"
+            className="lg:col-span-8"
           >
+            <div className="max-h-[calc(100vh-260px)] overflow-y-auto pr-2 space-y-4">
             {selectedPaper ? (
               <>
-                <div
+                {rightNavItems.length > 1 && (
+                  <div className="fixed right-4 top-1/2 -translate-y-1/2 z-40 hidden xl:flex flex-col gap-1.5 bg-white/90 backdrop-blur-md border border-slate-200 rounded-2xl px-2 py-3 shadow-lg">
+                    {rightNavItems.map(item => {
+                      const Icon = item.icon;
+                      const isActive = activeNav === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => scrollTo(item.id)}
+                          title={item.label}
+                          className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-all ${
+                            isActive
+                              ? 'bg-blue-50 text-blue-600 font-bold'
+                              : 'text-slate-400 hover:text-blue-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <Icon className="w-4 h-4 shrink-0" />
+                          <span className="whitespace-nowrap hidden group-hover:inline">{item.label}</span>
+                          {isActive && <span className="hidden group-hover:inline w-1.5 h-1.5 rounded-full bg-blue-500" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div id="graph-paper-info"
                   onClick={() => {
                     setPaperDetailPanel(selectedPaper);
                     setRelatedPaperPanel(null);
@@ -407,15 +466,18 @@ export default function Graph() {
                   </div>
                 </div>
 
-                <KnowledgeGraph
-                  paper={selectedPaper}
-                  onNodeClick={handleNodeClick}
-                  onKeywordClick={handleKeywordClick}
-                />
+                <div id="graph-knowledge">
+                  <KnowledgeGraph
+                    paper={selectedPaper}
+                    onNodeClick={handleNodeClick}
+                    onKeywordClick={handleKeywordClick}
+                  />
+                </div>
 
                 <AnimatePresence>
                   {keywordPanel && (
                     <motion.div
+                      id="graph-keyword"
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 20 }}
@@ -599,6 +661,7 @@ export default function Graph() {
                 <AnimatePresence>
                   {relatedPaperPanel && (
                     <motion.div
+                      id="graph-related"
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 20 }}
@@ -696,6 +759,7 @@ export default function Graph() {
                 <AnimatePresence>
                   {paperDetailPanel && (
                     <motion.div
+                      id="graph-detail"
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 20 }}
@@ -821,6 +885,7 @@ export default function Graph() {
                 )}
               </div>
             )}
+            </div>
           </motion.div>
         </div>
       </div>
