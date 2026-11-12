@@ -32,6 +32,10 @@ backend/public/
 # Test files
 backend/test.*
 
+# Deployment artifacts
+tunnel_url.txt
+公网访问地址.txt
+
 # Old project copy
 researchmind/
 

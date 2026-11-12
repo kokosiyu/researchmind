@@ -3,6 +3,38 @@ import { authService } from '../services/authService.js';
 
 const router = express.Router();
 
+// 登录失败锁定配置
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 分钟
+const failedAttempts = new Map(); // username -> { count, lockUntil }
+
+function isLocked(username) {
+  const record = failedAttempts.get(username);
+  if (!record) return false;
+  if (record.lockUntil && Date.now() < record.lockUntil) {
+    return true;
+  }
+  // 锁定已过期，清除记录
+  if (record.lockUntil && Date.now() >= record.lockUntil) {
+    failedAttempts.delete(username);
+    return false;
+  }
+  return false;
+}
+
+function recordFailedAttempt(username) {
+  const record = failedAttempts.get(username) || { count: 0, lockUntil: null };
+  record.count += 1;
+  if (record.count >= MAX_FAILED_ATTEMPTS) {
+    record.lockUntil = Date.now() + LOCKOUT_DURATION_MS;
+  }
+  failedAttempts.set(username, record);
+}
+
+function resetFailedAttempts(username) {
+  failedAttempts.delete(username);
+}
+
 function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -83,17 +115,27 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: '用户名和密码都是必填的' });
     }
 
+    // 检查账户是否被锁定
+    if (isLocked(username)) {
+      return res.status(423).json({ message: '账户已被临时锁定，请稍后再试' });
+    }
+
     // 查找用户
     const user = await req.db.get('SELECT * FROM users WHERE username = ?', [username]);
     if (!user) {
+      recordFailedAttempt(username);
       return res.status(401).json({ message: '用户名或密码错误' });
     }
 
     // 验证密码
     const passwordMatch = await authService.comparePassword(password, user.password);
     if (!passwordMatch) {
+      recordFailedAttempt(username);
       return res.status(401).json({ message: '用户名或密码错误' });
     }
+
+    // 登录成功，重置失败计数
+    resetFailedAttempts(username);
 
     // 生成 token
     const token = authService.generateToken(user);

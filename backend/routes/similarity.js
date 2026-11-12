@@ -52,7 +52,8 @@ router.post('/compare', authenticate, async (req, res) => {
       keywordsB: keywordsB.map(k => ({ term: k.term, score: Math.round(k.score * 100) / 100 }))
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[Similarity] 处理失败:', err);
+    res.status(500).json({ message: '服务器内部错误，请稍后重试' });
   }
 });
 
@@ -114,7 +115,8 @@ router.post('/check', authenticate, async (req, res) => {
       details: results
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[Similarity] 处理失败:', err);
+    res.status(500).json({ message: '服务器内部错误，请稍后重试' });
   }
 });
 
@@ -144,7 +146,8 @@ router.post('/keywords', authenticate, async (req, res) => {
       uniqueTokenCount: uniqueTokens.size
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[Similarity] 处理失败:', err);
+    res.status(500).json({ message: '服务器内部错误，请稍后重试' });
   }
 });
 

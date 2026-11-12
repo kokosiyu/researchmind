@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware';
 import type { Paper, Note, GraphData, User } from '../types';
 import { paperApi, noteApi, authApi } from '../services/api';
 
+type AIMode = 'cloud' | 'local';
+
 interface AppState {
   papers: Paper[];
   currentPaper: Paper | null;
@@ -13,6 +15,15 @@ interface AppState {
   isAuthenticated: boolean;
   isProcessingPaper: boolean;
   processingPaper: { title: string; status: string } | null;
+  aiMode: AIMode;
+  selectedModel: string;
+  isModelLoaded: boolean;
+  modelLoadingProgress: number;
+  modelLoadingText: string;
+  setAIMode: (mode: AIMode) => void;
+  setSelectedModel: (model: string) => void;
+  setModelLoaded: (loaded: boolean) => void;
+  setModelLoadingProgress: (progress: number, text: string) => void;
   addPaper: (paper: Omit<Paper, 'id' | 'createdAt'>) => Promise<void>;
   setCurrentPaper: (paper: Paper | null) => void;
   deletePaper: (paperId: string) => Promise<void>;
@@ -75,6 +86,16 @@ export const useAppStore = create<AppState>()(
       isAuthenticated: false,
       isProcessingPaper: false,
       processingPaper: null,
+      aiMode: 'cloud',
+      selectedModel: 'Llama-3.2-1B-Instruct-q4f32_1-MLC',
+      isModelLoaded: false,
+      modelLoadingProgress: 0,
+      modelLoadingText: '',
+
+      setAIMode: (mode) => set({ aiMode: mode }),
+      setSelectedModel: (model) => set({ selectedModel: model }),
+      setModelLoaded: (loaded) => set({ isModelLoaded: loaded }),
+      setModelLoadingProgress: (progress, text) => set({ modelLoadingProgress: progress, modelLoadingText: text }),
 
       addPaper: async (paper) => {
         try {

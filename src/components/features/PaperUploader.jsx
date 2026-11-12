@@ -1,35 +1,34 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Upload, X, FileText, CheckCircle, Edit } from 'lucide-react';
+import { Upload, X, FileText, CheckCircle, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { useAppStore } from '../../store/useAppStore';
 import { analyzeApi } from '../../services/api';
+import { ModelSelector } from './ModelSelector';
+import { localLLM } from '../../services/localLLM';
+import { extractTextFromFile } from '../../utils/textExtraction';
 
 export const PaperUploader = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadedFile, setUploadedFile] = useState(null);
-  const [formData, setFormData] = useState({
-    title: '',
-    authors: '',
-    abstract: '',
-    journal: '',
-    year: new Date().getFullYear(),
-    doi: '',
-    keywords: '',
-    content: ''
-  });
-  const [manualForm, setManualForm] = useState(false);
-  const [reviewForm, setReviewForm] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [localError, setLocalError] = useState(null);
 
-  const { addPaper, isProcessingPaper, processingPaper, setProcessingPaper } = useAppStore();
+  const { 
+    addPaper, 
+    isProcessingPaper, 
+    processingPaper, 
+    setProcessingPaper,
+    aiMode,
+    isModelLoaded
+  } = useAppStore();
   
   useEffect(() => {
     if (isProcessingPaper) {
       setAnalysisResult({
         title: processingPaper?.title || '正在处理...',
         authors: '分析中...',
-        abstract: processingPaper?.status || '正在调用 DeepSeek AI 进行论文分析...',
+        abstract: processingPaper?.status || '正在进行论文分析...',
         processing: true
       });
     }
@@ -52,19 +51,32 @@ export const PaperUploader = () => {
     if (files.length > 0) {
       await processFile(files[0]);
     }
-  }, []);
+  }, [aiMode, isModelLoaded]);
 
   const handleFileChange = useCallback(async (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length > 0) {
       await processFile(files[0]);
     }
-  }, []);
+  }, [aiMode, isModelLoaded]);
 
   const processFile = async (file) => {
     setUploadedFile(file);
     setAnalysisResult(null);
-    
+    setLocalError(null);
+
+    if (aiMode === 'local') {
+      if (!isModelLoaded) {
+        setLocalError('请先加载本地模型');
+        return;
+      }
+      await processFileLocal(file);
+    } else {
+      await processFileCloud(file);
+    }
+  };
+
+  const processFileCloud = async (file) => {
     setProcessingPaper(true, {
       title: file.name.replace(/\.[^/.]+$/, ''),
       status: '正在调用 DeepSeek AI 进行论文分析...'
@@ -86,10 +98,10 @@ export const PaperUploader = () => {
       
       setUploadedFile(null);
       setProcessingPaper(false);
-    } catch (error: unknown) {
+    } catch (error) {
       console.error('分析论文失败:', error);
       
-      const ax = error as { response?: { data?: { message?: string }; status?: number }; message?: string };
+      const ax = error;
       const serverMsg = ax?.response?.data?.message;
       const status = ax?.response?.status;
       const hint = serverMsg || ax?.message || '请确认后端已启动，且文件未超过大小限制（50MB）。';
@@ -132,44 +144,80 @@ ${status || '未知'}
     }
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    
-    const paperData = {
-      title: formData.title,
-      authors: formData.authors,
-      abstract: formData.abstract,
-      journal: formData.journal,
-      year: formData.year,
-      doi: formData.doi,
-      keywords: formData.keywords.split(',').map(k => k.trim()).filter(k => k),
-      content: formData.content
-    };
-
-    addPaper(paperData);
-    
-    setFormData({
-      title: '',
-      authors: '',
-      abstract: '',
-      journal: '',
-      year: new Date().getFullYear(),
-      doi: '',
-      keywords: '',
-      content: ''
+  const processFileLocal = async (file) => {
+    setProcessingPaper(true, {
+      title: file.name.replace(/\.[^/.]+$/, ''),
+      status: '正在本地分析论文...'
     });
-    setManualForm(false);
-    setReviewForm(false);
-    setUploadedFile(null);
+    
+    try {
+      console.log('开始本地分析文件:', file.name);
+      
+      const extractionResult = await extractTextFromFile(file);
+      if (!extractionResult.success) {
+        throw new Error(extractionResult.error || '文档解析失败');
+      }
+      
+      if (extractionResult.text.length < 50) {
+        throw new Error('文档内容过短，无法有效分析');
+      }
+      
+      const result = await localLLM.analyzePaper(extractionResult.text, file.name);
+      
+      setAnalysisResult(result);
+      await addPaper(result);
+      setUploadedFile(null);
+      setProcessingPaper(false);
+      
+    } catch (error) {
+      console.error('本地分析失败:', error);
+      const errMsg = error instanceof Error ? error.message : '未知错误';
+      setLocalError(errMsg);
+      setAnalysisResult({
+        title: '分析失败',
+        authors: '-',
+        abstract: errMsg,
+        summary: `## 论文分析失败
+
+### 错误说明
+${errMsg}
+
+### 建议
+尝试使用云端模式分析。`,
+        journal: '-',
+        year: new Date().getFullYear(),
+        keywords: [],
+        content: '',
+        fileName: file.name,
+        filePath: `local-${Date.now()}`,
+        processing: false,
+        isLocal: true
+      });
+      setUploadedFile(null);
+      setProcessingPaper(false);
+    }
   };
 
   const resetUpload = () => {
     setUploadedFile(null);
     setAnalysisResult(null);
+    setLocalError(null);
   };
 
   return (
     <div className="w-full">
+      <ModelSelector />
+      
+      {localError && (
+        <div className="mb-4 flex items-start space-x-3 bg-red-50 border border-red-200 rounded-xl p-4">
+          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-red-700 font-medium">错误</p>
+            <p className="text-red-600 text-sm mt-1">{localError}</p>
+          </div>
+        </div>
+      )}
+      
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -188,7 +236,11 @@ ${status || '未知'}
           >
             <div className="w-20 h-20 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
             <p className="text-xl font-medium text-slate-700">正在解析论文...</p>
-            <p className="text-sm text-slate-500 max-w-md text-center">请稍候，系统正在提取文本并调用DeepSeek AI进行分析，这可能需要几秒钟时间</p>
+            <p className="text-sm text-slate-500 max-w-md text-center">
+              {aiMode === 'local' 
+                ? '请稍候，本地 AI 正在分析...' 
+                : '请稍候，系统正在提取文本并调用DeepSeek AI进行分析'}
+            </p>
           </motion.div>
         ) : analysisResult ? (
           <motion.div
@@ -201,7 +253,7 @@ ${status || '未知'}
                 <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
                 <div className="text-center">
                   <p className="text-lg font-medium text-slate-700">正在分析论文</p>
-                  <p className="text-sm text-slate-500">请稍候，DeepSeek AI 正在分析...</p>
+                  <p className="text-sm text-slate-500">请稍候...</p>
                 </div>
               </>
             ) : (
@@ -210,6 +262,9 @@ ${status || '未知'}
                 <div className="text-center">
                   <p className="text-lg font-medium text-slate-700">论文分析完成</p>
                   <p className="text-sm text-slate-500">上传成功！</p>
+                  {analysisResult.isLocal && (
+                    <p className="text-xs text-green-600 mt-1">使用本地模型分析</p>
+                  )}
                 </div>
               </>
             )}
@@ -336,7 +391,9 @@ ${status || '未知'}
                 或点击选择文件 (PDF, TXT, DOCX, DOC)
               </p>
               <p className="text-xs text-slate-400 max-w-md">
-                系统将自动提取文本并调用DeepSeek AI进行分析
+                {aiMode === 'local' 
+                  ? '使用本地模型离线分析，保护隐私' 
+                  : '系统将自动提取文本并调用DeepSeek AI进行分析'}
               </p>
             </div>
             <input

@@ -19,6 +19,19 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// 隐藏服务器指纹
+app.disable('x-powered-by');
+
+// 安全响应头
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+  next();
+});
+
 // 中间件
 app.use(cors({
   origin: '*',
@@ -26,6 +39,31 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json({ limit: '10mb' }));
+
+// 简易内存速率限制器（按 IP）
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 分钟窗口
+const RATE_LIMIT_MAX = 60; // 每分钟最多 60 次请求
+
+function rateLimitMiddleware(req, res, next) {
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const now = Date.now();
+  const record = rateLimitMap.get(ip) || { count: 0, resetTime: now + RATE_LIMIT_WINDOW_MS };
+
+  if (now > record.resetTime) {
+    record.count = 0;
+    record.resetTime = now + RATE_LIMIT_WINDOW_MS;
+  }
+
+  record.count += 1;
+  rateLimitMap.set(ip, record);
+
+  if (record.count > RATE_LIMIT_MAX) {
+    return res.status(429).json({ message: '请求过于频繁，请稍后再试' });
+  }
+  next();
+}
+app.use(rateLimitMiddleware);
 
 // 增加超时时间，适应大型文件处理
 app.use((req, res, next) => {

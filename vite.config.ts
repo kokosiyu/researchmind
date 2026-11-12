@@ -8,7 +8,7 @@ const backendTarget = `http://localhost:${backendPort}`;
 // https://vite.dev/config/
 export default defineConfig({
   build: {
-    sourcemap: 'hidden',
+    sourcemap: false,
   },
   plugins: [
     react({

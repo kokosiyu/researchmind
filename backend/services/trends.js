@@ -12,7 +12,7 @@ export function extractKeywordTimeline(papers) {
 
     yearPaperCount[year] = (yearPaperCount[year] || 0) + 1;
 
-    const text = [paper.title, paper.abstract].filter(Boolean).join(' ');
+    const text = [paper.title, paper.abstract, paper.content].filter(Boolean).join(' ');
     const tokens = processText(text);
     const uniqueTokens = new Set(tokens);
 
@@ -72,7 +72,13 @@ export function extractKeywordTimeline(papers) {
     return entry;
   });
 
-  return { timelineData, topKeywords, years: years.map(Number), yearPaperCount };
+  // 返回每个 topKeyword 的全局出现频次，供前端词云直接使用
+  const topKeywordFreq = {};
+  for (const kw of topKeywords) {
+    topKeywordFreq[kw] = keywordGlobalCount[kw] || 0;
+  }
+
+  return { timelineData, topKeywords, topKeywordFreq, years: years.map(Number), yearPaperCount };
 }
 
 export function clusterPapers(papers, options = {}) {
@@ -82,7 +88,7 @@ export function clusterPapers(papers, options = {}) {
 
   const calculator = new TFIDFCalculator();
   for (const paper of papers) {
-    const text = [paper.title, paper.abstract, paper.keywords].filter(Boolean).join(' ');
+    const text = [paper.title, paper.abstract, paper.content, paper.keywords].filter(Boolean).join(' ');
     calculator.addDocument(paper.id, text);
   }
   calculator.build();
@@ -90,8 +96,9 @@ export function clusterPapers(papers, options = {}) {
   const vectors = papers.map(p => calculator.getVector(p.id)).filter(v => v != null);
   const validPapers = papers.filter((_, i) => calculator.getVector(papers[i].id) != null);
 
+  // 如果 TF-IDF 无法生成有效向量（论文缺少可分析文本），降级为按第一关键词/年份聚类
   if (vectors.length === 0) {
-    return { clusters: [], k: 0, elbowResults: [] };
+    return fallbackCluster(papers);
   }
 
   let k = options.k;
@@ -128,7 +135,7 @@ export function clusterPapers(papers, options = {}) {
     ).filter(Boolean);
 
     const clusterTexts = clusterPapers.map(p =>
-      [p.title, p.abstract].filter(Boolean).join(' ')
+      [p.title, p.abstract, p.content].filter(Boolean).join(' ')
     ).join(' ');
     const clusterTokens = processText(clusterTexts);
     const tokenFreq = {};
@@ -142,7 +149,7 @@ export function clusterPapers(papers, options = {}) {
 
     return {
       id: Number(clusterId),
-      label: topTerms.join('、'),
+      label: topTerms.join('、') || '未分类主题',
       topTerms,
       members,
       count: members.length
@@ -158,6 +165,31 @@ export function clusterPapers(papers, options = {}) {
   };
 }
 
+// 降级聚类：按第一关键词分组，无关键词则按年份分组
+function fallbackCluster(papers) {
+  const groups = {};
+  papers.forEach((p, idx) => {
+    let key = '未分类';
+    if (Array.isArray(p.keywords) && p.keywords.length > 0) {
+      key = p.keywords[0];
+    } else if (p.year) {
+      key = String(p.year) + '年';
+    }
+    if (!groups[key]) groups[key] = [];
+    groups[key].push({ id: p.id, title: p.title, year: p.year, index: idx });
+  });
+
+  const clusters = Object.entries(groups).map(([label, members], i) => ({
+    id: i,
+    label,
+    topTerms: [label],
+    members,
+    count: members.length
+  }));
+
+  return { clusters, k: clusters.length, elbowResults: [] };
+}
+
 export function buildPaperNetwork(papers) {
   if (!papers || papers.length < 2) {
     return { nodes: [], links: [] };
@@ -165,18 +197,21 @@ export function buildPaperNetwork(papers) {
 
   const calculator = new TFIDFCalculator();
   for (const paper of papers) {
-    const text = [paper.title, paper.abstract, paper.keywords].filter(Boolean).join(' ');
+    const text = [paper.title, paper.abstract, paper.content, paper.keywords].filter(Boolean).join(' ');
     calculator.addDocument(paper.id, text);
   }
   calculator.build();
 
   const nodes = papers.map(paper => {
-    const keywords = calculator.getTopTerms(paper.id, 5);
+    const topTerms = calculator.getTopTerms(paper.id, 5);
+    const keywords = topTerms.length > 0
+      ? topTerms.map(k => k.term)
+      : (Array.isArray(paper.keywords) ? paper.keywords.slice(0, 5) : []);
     return {
       id: paper.id,
       title: paper.title,
       year: paper.year,
-      keywords: keywords.map(k => k.term)
+      keywords
     };
   });
 
@@ -185,13 +220,24 @@ export function buildPaperNetwork(papers) {
 
   for (let i = 0; i < papers.length; i++) {
     const vecA = calculator.getVector(papers[i].id);
-    if (!vecA) continue;
 
     for (let j = i + 1; j < papers.length; j++) {
       const vecB = calculator.getVector(papers[j].id);
-      if (!vecB) continue;
+      let similarity = 0;
 
-      const similarity = cosineSimilarity(vecA, vecB);
+      if (vecA && vecB) {
+        similarity = cosineSimilarity(vecA, vecB);
+      } else {
+        // TF-IDF 向量不可用时，降级为基于关键词重叠的相似度
+        const kwA = new Set(Array.isArray(papers[i].keywords) ? papers[i].keywords : []);
+        const kwB = new Set(Array.isArray(papers[j].keywords) ? papers[j].keywords : []);
+        if (kwA.size > 0 && kwB.size > 0) {
+          const intersection = [...kwA].filter(k => kwB.has(k)).length;
+          const union = new Set([...kwA, ...kwB]).size;
+          similarity = union > 0 ? intersection / union : 0;
+        }
+      }
+
       if (similarity >= threshold) {
         links.push({
           source: papers[i].id,

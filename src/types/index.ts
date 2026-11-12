@@ -68,3 +68,71 @@ export interface GraphData {
   nodes: GraphNode[];
   links: GraphLink[];
 }
+
+export interface TimelineData {
+  year: number;
+  [keyword: string]: number;
+}
+
+export interface KeywordTimeline {
+  timelineData: TimelineData[];
+  topKeywords: string[];
+  topKeywordFreq?: Record<string, number>;
+  years: number[];
+  yearPaperCount?: Record<number, number>;
+}
+
+export interface ClusterMember {
+  id: string;
+  title: string;
+  year: number;
+  index: number;
+}
+
+export interface Cluster {
+  id: number;
+  label: string;
+  topTerms: string[];
+  members: ClusterMember[];
+  count: number;
+}
+
+export interface ClusteringResult {
+  clusters: Cluster[];
+  k: number;
+  iterations?: number;
+  inertia?: number;
+  elbowResults?: { k: number; inertia: number; iterations: number }[];
+}
+
+export interface NetworkNode {
+  id: string;
+  title: string;
+  year: number;
+  keywords: string[];
+}
+
+export interface NetworkLink {
+  source: string;
+  target: string;
+  similarity: number;
+}
+
+export interface PaperNetwork {
+  nodes: NetworkNode[];
+  links: NetworkLink[];
+}
+
+export interface TrendsSummary {
+  totalPapers: number;
+  yearRange: { from: number; to: number } | null;
+  topKeywords: string[];
+  clusterCount: number;
+}
+
+export interface TrendsData {
+  timeline: KeywordTimeline;
+  clustering: ClusteringResult;
+  network: PaperNetwork;
+  summary: TrendsSummary;
+}

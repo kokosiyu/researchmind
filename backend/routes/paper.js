@@ -27,7 +27,8 @@ router.get('/', authenticate, async (req, res) => {
     }));
     res.json(parsedPapers);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[Paper] 获取论文列表失败:', err);
+    res.status(500).json({ message: '获取论文列表失败' });
   }
 });
 
@@ -41,7 +42,8 @@ router.get('/:id', authenticate, async (req, res) => {
     paper.keywords = paper.keywords ? JSON.parse(paper.keywords) : [];
     res.json(paper);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[Paper] 获取论文详情失败:', err);
+    res.status(500).json({ message: '获取论文详情失败' });
   }
 });
 
@@ -60,7 +62,8 @@ router.post('/', authenticate, async (req, res) => {
     newPaper.keywords = newPaper.keywords ? JSON.parse(newPaper.keywords) : [];
     res.status(201).json(newPaper);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    console.error('[Paper] 创建论文失败:', err);
+    res.status(400).json({ message: '创建论文失败，请检查输入数据' });
   }
 });
 
@@ -107,7 +110,8 @@ router.put('/:id', authenticate, async (req, res) => {
     updatedPaper.keywords = updatedPaper.keywords ? JSON.parse(updatedPaper.keywords) : [];
     res.json(updatedPaper);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    console.error('[Paper] 更新论文失败:', err);
+    res.status(400).json({ message: '更新论文失败，请检查输入数据' });
   }
 });
 
@@ -127,7 +131,8 @@ router.delete('/:id', authenticate, async (req, res) => {
     
     res.json({ message: '论文已删除' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[Paper] 删除论文失败:', err);
+    res.status(500).json({ message: '删除论文失败' });
   }
 });
 

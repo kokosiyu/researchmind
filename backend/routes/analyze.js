@@ -65,11 +65,11 @@ function handleUpload(req, res, next) {
           });
         }
         return res.status(400).json({
-          message: `上传错误: ${err.message}`
+          message: '文件上传失败，请重试'
         });
       } else if (err) {
         return res.status(400).json({
-          message: err.message || '文件上传失败'
+          message: '文件上传失败，请检查文件格式'
         });
       }
     }
@@ -144,7 +144,7 @@ router.post('/paper', handleUpload, async (req, res) => {
   } catch (err) {
     console.error('分析失败:', err);
     res.status(500).json({
-      message: `服务器错误: ${err.message}`
+      message: '服务器内部错误，请稍后重试'
     });
   } finally {
     cleanupFile(filePath);

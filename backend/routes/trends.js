@@ -42,7 +42,8 @@ router.get('/overview', authenticate, async (req, res) => {
     const result = analyzeResearchTrends(parsedPapers);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[Trends] 处理失败:', err);
+    res.status(500).json({ message: '服务器内部错误，请稍后重试' });
   }
 });
 
@@ -61,7 +62,8 @@ router.get('/timeline', authenticate, async (req, res) => {
     const timeline = extractKeywordTimeline(parsedPapers);
     res.json(timeline);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[Trends] 处理失败:', err);
+    res.status(500).json({ message: '服务器内部错误，请稍后重试' });
   }
 });
 
@@ -81,7 +83,8 @@ router.get('/clusters', authenticate, async (req, res) => {
     const result = clusterPapers(parsedPapers, { k });
     res.json(result);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[Trends] 处理失败:', err);
+    res.status(500).json({ message: '服务器内部错误，请稍后重试' });
   }
 });
 
@@ -100,7 +103,8 @@ router.get('/network', authenticate, async (req, res) => {
     const result = buildPaperNetwork(parsedPapers);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[Trends] 处理失败:', err);
+    res.status(500).json({ message: '服务器内部错误，请稍后重试' });
   }
 });
 

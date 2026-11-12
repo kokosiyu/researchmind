@@ -49,14 +49,48 @@ const imageUpload = multer({
   },
 });
 
+// 校验图片文件内容（magic number），防止伪造 MIME 类型
+function validateImageContent(filePath) {
+  return new Promise((resolve) => {
+    const fd = fs.openSync(filePath, 'r');
+    const buffer = Buffer.alloc(12);
+    fs.readSync(fd, buffer, 0, 12, 0);
+    fs.closeSync(fd);
+
+    const hex = buffer.toString('hex', 0, 12);
+    // JPEG: FF D8 FF
+    if (hex.startsWith('ffd8ff')) return resolve(true);
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (hex.startsWith('89504e470d0a1a0a')) return resolve(true);
+    // GIF: 47 49 46 38 (GIF87a / GIF89a)
+    if (hex.startsWith('47494638')) return resolve(true);
+    // BMP: 42 4D (BM)
+    if (hex.startsWith('424d')) return resolve(true);
+    // WebP: 52 49 46 46 (RIFF) .... 57 45 42 50 (WEBP)
+    if (hex.startsWith('52494646') && hex.substring(16, 24) === '57454250') return resolve(true);
+
+    return resolve(false);
+  });
+}
+
 router.post('/upload-image', (req, res) => {
-  imageUpload.single('image')(req, res, (err) => {
+  imageUpload.single('image')(req, res, async (err) => {
     if (err) {
-      return res.status(400).json({ message: err.message });
+      console.error('[Note] 图片上传失败:', err.message);
+      return res.status(400).json({ message: '图片上传失败，请检查文件格式' });
     }
     if (!req.file) {
       return res.status(400).json({ message: '请选择要上传的图片' });
     }
+
+    // 校验文件真实内容，防止伪造 MIME 类型上传恶意文件
+    const isValid = await validateImageContent(req.file.path);
+    if (!isValid) {
+      // 删除伪造文件
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ message: '文件内容与声明格式不符，仅支持真实图片文件' });
+    }
+
     const imageUrl = `/uploads/note-images/${req.file.filename}`;
     res.json({ url: imageUrl, filename: req.file.filename });
   });
@@ -72,7 +106,8 @@ router.get('/', authenticate, async (req, res) => {
     }));
     res.json(parsedNotes);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[Note] 获取笔记列表失败:', err);
+    res.status(500).json({ message: '获取笔记列表失败' });
   }
 });
 
@@ -86,7 +121,8 @@ router.get('/paper/:paperId', authenticate, async (req, res) => {
     }));
     res.json(parsedNotes);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[Note] 获取论文笔记失败:', err);
+    res.status(500).json({ message: '获取笔记失败' });
   }
 });
 
@@ -100,7 +136,8 @@ router.get('/:id', authenticate, async (req, res) => {
     note.tags = note.tags ? JSON.parse(note.tags) : [];
     res.json(note);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[Note] 获取笔记详情失败:', err);
+    res.status(500).json({ message: '获取笔记详情失败' });
   }
 });
 
@@ -119,7 +156,8 @@ router.post('/', authenticate, async (req, res) => {
     newNote.tags = newNote.tags ? JSON.parse(newNote.tags) : [];
     res.status(201).json(newNote);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    console.error('[Note] 创建笔记失败:', err);
+    res.status(400).json({ message: '创建笔记失败，请检查输入数据' });
   }
 });
 
@@ -144,7 +182,8 @@ router.put('/:id', authenticate, async (req, res) => {
     updatedNote.tags = updatedNote.tags ? JSON.parse(updatedNote.tags) : [];
     res.json(updatedNote);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    console.error('[Note] 更新笔记失败:', err);
+    res.status(400).json({ message: '更新笔记失败，请检查输入数据' });
   }
 });
 
@@ -159,7 +198,8 @@ router.delete('/:id', authenticate, async (req, res) => {
     await req.db.run('DELETE FROM notes WHERE id = ?', [req.params.id]);
     res.json({ message: '笔记已删除' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[Note] 删除笔记失败:', err);
+    res.status(500).json({ message: '删除笔记失败' });
   }
 });
 

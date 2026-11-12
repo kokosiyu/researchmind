@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Paper, Note, GraphData, User, AuthResponse } from '../types';
+import type { Paper, Note, GraphData, User, AuthResponse, TrendsData } from '../types';
 
 const API_URL = '/api';
 
@@ -216,7 +216,7 @@ export const similarityApi = {
 };
 
 export const trendsApi = {
-  getOverview: async () => {
+  getOverview: async (): Promise<TrendsData> => {
     const response = await api.get('/trends/overview');
     return response.data;
   },

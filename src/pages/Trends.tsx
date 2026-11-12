@@ -34,7 +34,7 @@ interface NetworkLink {
 
 interface OverviewData {
   timeline: { timelineData: TimelineData[]; topKeywords: string[]; years: number[] };
-  clustering: { clusters: ClusterData[]; k: number; elbowResults: { k: number; inertia: number; iterations: number }[] };
+  clustering: { clusters: ClusterData[]; k: number; elbowResults?: { k: number; inertia: number; iterations: number }[] };
   network: { nodes: NetworkNode[]; links: NetworkLink[] };
   summary: { totalPapers: number; yearRange: { from: number; to: number } | null; topKeywords: string[]; clusterCount: number };
 }
