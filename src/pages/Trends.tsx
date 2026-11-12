@@ -45,7 +45,7 @@ const LINE_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec
 type Tab = 'timeline' | 'clusters' | 'network';
 
 export default function Trends() {
-  const { papers } = useAppStore();
+  const { papers, token } = useAppStore();
   const [tab, setTab] = useState<Tab>('timeline');
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -55,7 +55,7 @@ export default function Trends() {
     setLoading(true);
     setError('');
     try {
-      const result = await trendsApi.getOverview();
+      const result = await trendsApi.getOverview(token);
       setData(result);
     } catch (e: any) {
       setError(e.response?.data?.message || '加载失败');

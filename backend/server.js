@@ -9,9 +9,6 @@ import { paperRoutes } from './routes/paper.js';
 import { noteRoutes } from './routes/note.js';
 import { analyzeRoutes } from './routes/analyze.js';
 import { authRoutes } from './routes/auth.js';
-import { assistantRoutes } from './routes/assistant.js';
-import { similarityRoutes } from './routes/similarity.js';
-import { trendsRoutes } from './routes/trends.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,26 +35,23 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json());
 
 // 简易内存速率限制器（按 IP）
 const rateLimitMap = new Map();
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 分钟窗口
-const RATE_LIMIT_MAX = 60; // 每分钟最多 60 次请求
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_MAX = 60;
 
 function rateLimitMiddleware(req, res, next) {
   const ip = req.ip || req.connection.remoteAddress || 'unknown';
   const now = Date.now();
   const record = rateLimitMap.get(ip) || { count: 0, resetTime: now + RATE_LIMIT_WINDOW_MS };
-
   if (now > record.resetTime) {
     record.count = 0;
     record.resetTime = now + RATE_LIMIT_WINDOW_MS;
   }
-
   record.count += 1;
   rateLimitMap.set(ip, record);
-
   if (record.count > RATE_LIMIT_MAX) {
     return res.status(429).json({ message: '请求过于频繁，请稍后再试' });
   }
@@ -74,30 +68,15 @@ app.use((req, res, next) => {
 
 // 连接数据库
 async function initDatabase() {
-  const dbPath = path.join(__dirname, 'researchmind.db');
   const db = await open({
-    filename: dbPath,
+    filename: './researchmind.db',
     driver: sqlite3.Database
   });
-
-  // 创建用户表（必须最先创建，因为其他表引用它）
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      role TEXT DEFAULT 'user',
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
 
   // 创建论文表
   await db.exec(`
     CREATE TABLE IF NOT EXISTS papers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      userId INTEGER,
       title TEXT NOT NULL,
       authors TEXT NOT NULL,
       abstract TEXT NOT NULL,
@@ -110,8 +89,7 @@ async function initDatabase() {
       fileName TEXT,
       filePath TEXT,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (userId) REFERENCES users(id)
+      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
 
@@ -119,24 +97,27 @@ async function initDatabase() {
   await db.exec(`
     CREATE TABLE IF NOT EXISTS notes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      userId INTEGER,
       paperId INTEGER,
       content TEXT NOT NULL,
       tags TEXT,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
       updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (userId) REFERENCES users(id),
       FOREIGN KEY (paperId) REFERENCES papers(id)
     );
   `);
 
-  // 给已有表添加 userId 列（如果不存在）
-  try {
-    await db.exec(`ALTER TABLE papers ADD COLUMN userId INTEGER`);
-  } catch (e) { /* 列已存在，忽略 */ }
-  try {
-    await db.exec(`ALTER TABLE notes ADD COLUMN userId INTEGER`);
-  } catch (e) { /* 列已存在，忽略 */ }
+  // 创建用户表
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      role TEXT DEFAULT 'user',
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 
   return db;
 }
@@ -158,7 +139,7 @@ app.get('/health', (req, res) => {
 });
 
 // 静态文件服务，用于下载上传的文件
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static('uploads'));
 
 // 路由
 app.use('/api/papers', (req, res, next) => {
@@ -178,21 +159,6 @@ app.use('/api/auth', (req, res, next) => {
   next();
 }, authRoutes);
 
-app.use('/api/assistant', (req, res, next) => {
-  req.db = db;
-  next();
-}, assistantRoutes);
-
-app.use('/api/similarity', (req, res, next) => {
-  req.db = db;
-  next();
-}, similarityRoutes);
-
-app.use('/api/trends', (req, res, next) => {
-  req.db = db;
-  next();
-}, trendsRoutes);
-
 // 静态文件服务，用于提供前端构建文件
 app.use(express.static('public'));
 
@@ -207,13 +173,7 @@ app.use((err, req, res, next) => {
 
 // 处理前端路由，所有未匹配的路由都返回index.html
 app.get('*', (req, res) => {
-  // Vercel 部署时，前端构建产物在根目录的 dist 目录
-  // 本地开发时，前端构建产物在 backend/public 目录
-  const isVercel = process.env.VERCEL === '1';
-  const indexPath = isVercel 
-    ? path.join(__dirname, '..', 'dist', 'index.html')
-    : path.join(__dirname, 'public', 'index.html');
-  res.sendFile(indexPath);
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 const server = app.listen(PORT, () => {

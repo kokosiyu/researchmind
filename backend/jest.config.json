@@ -2,6 +2,5 @@
   "testEnvironment": "node",
   "testMatch": ["**/__tests__/**/*.test.js", "**/*.test.js"],
   "verbose": true,
-  "moduleFileExtensions": ["js", "json"],
-  "transform": {}
+  "moduleFileExtensions": ["js", "json"]
 }

@@ -49,3 +49,6 @@ researchmind/
 *.njsproj
 *.sln
 *.sw?
+# Test files
+test.pdf
+test_download.txt

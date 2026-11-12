@@ -1,23 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-type Theme = 'blue' | 'warm';
-
-const themeConfig = {
-  blue: {
-    particle: () => `rgba(${Math.floor(Math.random() * 40 + 120)}, ${Math.floor(Math.random() * 40 + 160)}, ${Math.floor(Math.random() * 30 + 220)}, 0.4)`,
-    line: (d: number) => `rgba(130, 180, 240, ${0.25 * (1 - d / 150)})`,
-  },
-  warm: {
-    particle: () => `rgba(${Math.floor(Math.random() * 30 + 210)}, ${Math.floor(Math.random() * 30 + 160)}, ${Math.floor(Math.random() * 20 + 50)}, 0.35)`,
-    line: (d: number) => `rgba(210, 170, 80, ${0.22 * (1 - d / 150)})`,
-  },
-};
-
-interface ParticleAnimationProps {
-  theme?: Theme;
-}
-
-const ParticleAnimation = ({ theme = 'blue' }: ParticleAnimationProps) => {
+const ParticleAnimation = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -30,11 +13,10 @@ const ParticleAnimation = ({ theme = 'blue' }: ParticleAnimationProps) => {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    const cfg = themeConfig[theme];
-
     const particles: { x: number; y: number; size: number; speedX: number; speedY: number; color: string }[] = [];
     const particleCount = 100;
 
+    // 初始化粒子
     for (let i = 0; i < particleCount; i++) {
       particles.push({
         x: Math.random() * canvas.width,
@@ -42,7 +24,7 @@ const ParticleAnimation = ({ theme = 'blue' }: ParticleAnimationProps) => {
         size: Math.random() * 3 + 1,
         speedX: (Math.random() - 0.5) * 1,
         speedY: (Math.random() - 0.5) * 1,
-        color: cfg.particle(),
+        color: `rgba(${Math.random() * 100 + 155}, ${Math.random() * 100 + 155}, ${Math.random() * 100 + 155}, 0.6)`
       });
     }
 
@@ -55,12 +37,15 @@ const ParticleAnimation = ({ theme = 'blue' }: ParticleAnimationProps) => {
         ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
         ctx.fill();
 
+        // 更新粒子位置
         particle.x += particle.speedX;
         particle.y += particle.speedY;
 
+        // 边界检查
         if (particle.x < 0 || particle.x > canvas.width) particle.speedX *= -1;
         if (particle.y < 0 || particle.y > canvas.height) particle.speedY *= -1;
 
+        // 绘制粒子之间的连线
         particles.forEach((otherParticle, otherIndex) => {
           if (index !== otherIndex) {
             const dx = particle.x - otherParticle.x;
@@ -69,7 +54,7 @@ const ParticleAnimation = ({ theme = 'blue' }: ParticleAnimationProps) => {
 
             if (distance < 150) {
               ctx.beginPath();
-              ctx.strokeStyle = cfg.line(distance);
+              ctx.strokeStyle = `rgba(100, 150, 255, ${0.2 * (1 - distance / 150)})`;
               ctx.lineWidth = 0.5;
               ctx.moveTo(particle.x, particle.y);
               ctx.lineTo(otherParticle.x, otherParticle.y);
@@ -93,7 +78,7 @@ const ParticleAnimation = ({ theme = 'blue' }: ParticleAnimationProps) => {
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, [theme]);
+  }, []);
 
   return (
     <canvas
